@@ -17,7 +17,7 @@ if screenGui then screenGui:Destroy() end -- 防止重复，先删旧的
 screenGui = Instance.new("ScreenGui")
 screenGui.Name = "StatusHUD"
 screenGui.ResetOnSpawn = false -- 死亡不重置
-screenGui.DisplayOrder = 10 -- 保证在最上层
+screenGui.DisplayOrder = 100
 screenGui.Parent = playerGui
 
 -- ==========================================

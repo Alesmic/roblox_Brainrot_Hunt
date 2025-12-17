@@ -183,7 +183,7 @@ GameConfig.Weapons = {
 	},
 	["ClassicSword"] = { 
 		DisplayName = "Classic Sword", Damage = 35, Cooldown = 0.6, 
-		Category = "Weapons", Price = 0, ProductId = 3480212020, 
+		Category = "Weapons", Price = 0, ProductId = 3481635197, 
 		RobuxPrice = 1, CanSell = false, Rarity = "Rare",
 		ImageId = "rbxasset://Textures/Sword128.png"
 	},

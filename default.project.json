@@ -21,6 +21,11 @@
         "$path": "src/StarterPlayer/StarterCharacterScripts"
       }
     },
+    "StarterPack": {
+      "$className": "StarterPack",
+      "$ignoreUnknownInstances": true,
+      "$path": "src/StarterPack"
+    },
     "StarterGui": {
       "$className": "StarterGui",
       "$ignoreUnknownInstances": true,
