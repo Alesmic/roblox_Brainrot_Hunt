@@ -56,9 +56,9 @@ GameConfig.Mobs = {
 		}
 	},
 	-- Urban Boss (Unlocked at Lvl 20)
-	["Samurai Boss"] = {
-		Name = "Samurai Boss",
-		MaxHealth = 500,   
+	["Saharan Master"] = {
+		Name = "Saharan Master",
+		MaxHealth = 1000,   
 		Damage = 40,       
 		Exp = 500,         
 		UnlockLevel = 20,  -- Unlocks Boss Fight at Level 20
@@ -70,10 +70,24 @@ GameConfig.Mobs = {
 			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
 		}
 	},
+	["Black Garden Ant"] = {
+		Name = "Black Garden Ant",
+		MaxHealth = 300,   
+		Damage = 20,       
+		Exp = 300,         
+		UnlockLevel = 20,  -- Unlocks Boss Fight at Level 20
+		AttackRange = 8,
+		AttackSpeed = 1.2,
+		WalkSpeed = 16,
+		Drops = {
+			{ ItemName = "ClassicSword", Chance = 0.5 }, -- 50% drop chance for Weapon
+			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
+		}
+	},
 
 	-- 🌲 Forest Area
-	["ForestMob"] = { 
-		Name = "Forest NPC", -- Ensure model name is Forest NPC
+	["Teddy"] = { 
+		Name = "Teddy", -- Ensure model name is Forest NPC
 		MaxHealth = 100,   -- 100 HP
 		Damage = 20,       -- 20 Damage
 		Exp = 100,         -- 100 EXP
@@ -84,6 +98,7 @@ GameConfig.Mobs = {
 			{ ItemName = "Medpack", Chance = 0.3 }
 		}
 	},
+
 	-- Forest Boss (Unlocked at Lvl 50)
 	["Forest Guardian"] = { 
 		Name = "Forest Guardian", 
@@ -113,8 +128,108 @@ GameConfig.Mobs = {
 		}
 	},
 	-- Desert Boss (Unlocked at Lvl 99)
-	["Saharan Master"] = { 
-		Name = "Saharan Master", 
+	["DesertBoss"] = { 
+		Name = "DesertBoss", 
+		MaxHealth = 1000,  
+		Damage = 90,
+		Exp = 5000,
+		UnlockLevel = 99,  -- Unlocks Boss Fight at Level 99
+		AttackRange = 12,
+		AttackSpeed = 0.8,
+		WalkSpeed = 16,
+		Drops = {
+			{ ItemName = "Real Knife", Chance = 0.05 } -- 5% drop chance for Legendary Weapon
+		}
+	}
+}GameConfig.Mobs = {
+	-- 🏙️ Urban Area (Japan)
+	["Samurai"] = { 
+		Name = "Samurai", 
+		MaxHealth = 50,    -- 50 HP
+		Damage = 10,       -- 10 Damage
+		Exp = 50,          -- 50 EXP
+		AttackRange = 5,
+		AttackSpeed = 1.5,
+		WalkSpeed = 12,
+		Drops = {
+			{ ItemName = "Medpack", Chance = 0.15 } -- 15% drop chance for Medpack
+		}
+	},
+	-- Urban Boss (Unlocked at Lvl 20)
+	["Saharan Master"] = {
+		Name = "Saharan Master",
+		MaxHealth = 1000,   
+		Damage = 40,       
+		Exp = 500,         
+		UnlockLevel = 20,  -- Unlocks Boss Fight at Level 20
+		AttackRange = 8,
+		AttackSpeed = 1.2,
+		WalkSpeed = 16,
+		Drops = {
+			{ ItemName = "ClassicSword", Chance = 0.5 }, -- 50% drop chance for Weapon
+			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
+		}
+	},
+	["Black Garden Ant"] = {
+		Name = "Black Garden Ant",
+		MaxHealth = 300,   
+		Damage = 20,       
+		Exp = 300,         
+		UnlockLevel = 20,  -- Unlocks Boss Fight at Level 20
+		AttackRange = 8,
+		AttackSpeed = 1.2,
+		WalkSpeed = 16,
+		Drops = {
+			{ ItemName = "ClassicSword", Chance = 0.5 }, -- 50% drop chance for Weapon
+			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
+		}
+	},
+
+	-- 🌲 Forest Area
+	["Teddy"] = { 
+		Name = "Teddy", -- Ensure model name is Forest NPC
+		MaxHealth = 100,   -- 100 HP
+		Damage = 20,       -- 20 Damage
+		Exp = 100,         -- 100 EXP
+		AttackRange = 6,
+		AttackSpeed = 1.2,
+		WalkSpeed = 10,
+		Drops = {
+			{ ItemName = "Medpack", Chance = 0.3 }
+		}
+	},
+
+	-- Forest Boss (Unlocked at Lvl 50)
+	["AntBoss"] = { 
+		Name = "AntBoss", 
+		MaxHealth = 2000,   
+		Damage = 40,
+		Exp = 2000,
+		UnlockLevel = 50,  -- Unlocks Boss Fight at Level 50
+		AttackRange = 10,
+		AttackSpeed = 1.0,
+		WalkSpeed = 12,
+		Drops = {
+			{ ItemName = "Gold Statue", Chance = 0.2 }
+		}
+	},
+
+	-- 🏜️ Desert Area
+	["DesertMob"] = { 
+		Name = "Desert Raider", -- Ensure model name is Desert Raider
+		MaxHealth = 200,   -- 200 HP
+		Damage = 30,       -- 30 Damage
+		Exp = 200,         -- 200 EXP
+		AttackRange = 8,
+		AttackSpeed = 1.0,
+		WalkSpeed = 14,
+		Drops = {
+			{ ItemName = "Medpack", Chance = 0.5 }
+		}
+	},
+	-- Desert Boss (Unlocked at Lvl 99)
+	["DesertBoss"] = { 
+		Name = "DesertBoss", 
 		MaxHealth = 1000,  
 		Damage = 90,
 		Exp = 5000,

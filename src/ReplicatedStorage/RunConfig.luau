@@ -5,8 +5,8 @@ local RunConfig = {}
 -- \\ SETTINGS \\
 
 RunConfig.WalkSpeed = game.StarterPlayer.CharacterWalkSpeed
-RunConfig.RunSpeed = 40 -- Speed while runninh
-RunConfig.SprintSpeed = 45 -- Speed while sprinting
+RunConfig.RunSpeed = 70 -- Speed while runninh
+RunConfig.SprintSpeed = 75 -- Speed while sprinting
 
 RunConfig.WalkFov = workspace.Camera.FieldOfView
 RunConfig.RunFov = 80 -- Camera FieldOfView while running
