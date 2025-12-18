@@ -191,7 +191,7 @@ GameConfig.Weapons = {
 		DisplayName = "Real Knife", Damage = 999, Cooldown = 0.3, 
 		Category = "Weapons", Price = 0, ProductId = 87654321, 
 		RobuxPrice = 99, CanSell = false, Rarity = "Legendary",
-		ImageId = "rbxassetid://"
+		ImageId = "rbxassetid://732391130"
 	}
 }
 
@@ -200,7 +200,7 @@ GameConfig.Skin = {
 		DisplayName = "Red Aura", Type = "Skin",
 		Price = 0, Category = "Skins", CanSell = false,
 		Rarity = "Rare",
-		ImageId = "rbxassetid://"
+		ImageId = "rbxassetid://732391130"
 	}
 }
 

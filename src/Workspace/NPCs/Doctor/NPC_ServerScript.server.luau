@@ -5,8 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- 1. 获取 RemoteEvent 文件夹
 local RemoteEventFolder = ReplicatedStorage:WaitForChild("RemoteEvent")
 
--- ⚠️ [关键修改] 这里必须指向 "ToggleHealerWindow"
--- 如果写成 "ToggleWindow"，它就会打开那个卖剑的普通商店！
+-- ⚠️ [关键] 必须指向 "ToggleHealerWindow" (对应客户端 DoctorShop_Local)
 local openDoctorEvent = RemoteEventFolder:WaitForChild("ToggleHealerWindow")
 
 -- 2. 获取交互提示
@@ -15,27 +14,31 @@ local prompt = npc:FindFirstChild("ProximityPrompt")
 
 if prompt then
 	prompt.Triggered:Connect(function(player)
-		-- [新增] 检查玩家是否开启了 PvP
+		-- ==========================================
+		-- 1. PvP 检查 (优先拦截)
+		-- ==========================================
 		local isPvP = player:GetAttribute("PvPEnabled")
 
 		if isPvP then
 			print("🚫 [NPC] 拒绝服务: 玩家处于 PvP 模式")
-
-			-- 发送提示给玩家 (使用 RemoteEvent 通知客户端弹窗或显示文字)
 			local pvpEvent = ReplicatedStorage:FindFirstChild("PvPEvent")
 			if pvpEvent then
-				pvpEvent:FireClient(player, "Error", "战斗状态下无法交易！请先关闭 PvP。")
+				pvpEvent:FireClient(player, "Error", "战斗状态下无法治疗！请先关闭 PvP。")
 			end
-
-			return -- ⚠️ 直接结束，不执行下面的商店逻辑
+			return -- 🛑 必须在这里结束
 		end
 
-		-- [原有逻辑] 下面是你原来的商店代码，保持不变
-		print("🖱️ [服务器] 玩家 " .. player.Name .. " 打开了商店")
-		local shopEvent = ReplicatedStorage:FindFirstChild("ShopEvent") -- 假设你的商店事件
-		if shopEvent then
-			shopEvent:FireClient(player, "OpenShop", "Weapons") 
-		end
+		-- ==========================================
+		-- 2. 打开医生商店 (核心修复)
+		-- ==========================================
+		print("🚑 [服务器] 玩家 " .. player.Name .. " 请求治疗/购买物品")
+
+		-- ❌ 错误代码 (原先的):
+		-- local shopEvent = ReplicatedStorage:FindFirstChild("ShopEvent")
+		-- shopEvent:FireClient(player, "OpenShop", "Weapons") 
+
+		-- ✅ 正确代码: 使用上面定义的 openDoctorEvent
+		openDoctorEvent:FireClient(player) 
 	end)
 else
 	warn("❌ DoctorNPC 找不到 ProximityPrompt")

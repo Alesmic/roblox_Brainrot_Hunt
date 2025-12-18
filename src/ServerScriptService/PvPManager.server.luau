@@ -3,7 +3,11 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
--- 1. 初始化远程事件
+-- Import configuration
+local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local MIN_LEVEL = GameConfig.PvP and GameConfig.PvP.MinLevel or 20
+
+-- Initialize RemoteEvent
 local pvpEvent = ReplicatedStorage:FindFirstChild("PvPEvent")
 if not pvpEvent then
 	pvpEvent = Instance.new("RemoteEvent")
@@ -14,45 +18,73 @@ end
 local PvPManager = {}
 
 -- ==========================================
--- 辅助：检查是否在安全区
+-- 1. Multi-SafeZone Detection System
 -- ==========================================
-local function isInSafeZone(character)
-	-- 寻找场景中的 SafeZone 零件
-	local safeZonePart = Workspace:FindFirstChild("SafeZone")
-	if not safeZonePart then return false end
+local SafeZoneParts = {} -- Cache list
 
+-- Refresh SafeZone list (Run on startup)
+local function refreshSafeZones()
+	table.clear(SafeZoneParts)
+	for _, part in pairs(Workspace:GetDescendants()) do
+		if part.Name == "SafeZone" and part:IsA("BasePart") then
+			table.insert(SafeZoneParts, part)
+		end
+	end
+	print("🛡️ [PvPManager] Loaded " .. #SafeZoneParts .. " SafeZones")
+end
+
+refreshSafeZones() -- Execute once on initialization
+
+-- Check if player is in ANY SafeZone
+local function isInSafeZone(character)
+	if not character then return false end
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return false end
 
-	-- 空间查询
-	local partsInZone = Workspace:GetPartsInPart(safeZonePart)
-	for _, part in pairs(partsInZone) do
-		if part == rootPart then
-			return true
+	for _, zonePart in pairs(SafeZoneParts) do
+		if zonePart and zonePart.Parent then -- Ensure part still exists
+			-- Use spatial query API
+			local parts = Workspace:GetPartsInPart(zonePart)
+			for _, part in pairs(parts) do
+				if part == rootPart then
+					return true -- Considered safe if in any zone
+				end
+			end
 		end
 	end
 	return false
 end
 
 -- ==========================================
--- 核心功能：切换 PVP 状态
+-- 2. PvP Status Management (Core)
 -- ==========================================
 local function updatePvPStatus(player, isEnabled, reason)
 	local char = player.Character
 	if not char then return end
 
-	-- 1. 开启时的安全区检查 (防止在安全区内开启)
+	-- A. Checks when attempting to enable
 	if isEnabled then
+		-- 1. SafeZone check
 		if isInSafeZone(char) then
-			pvpEvent:FireClient(player, "Error", "此为安全区，禁止开启PvP")
-			return 
+			pvpEvent:FireClient(player, "Error", "PvP cannot be enabled in SafeZone!")
+			return -- 🚫 Block
+		end
+
+		-- 2. Level check
+		local level = 0
+		if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("Level") then
+			level = player.leaderstats.Level.Value
+		end
+		if level < MIN_LEVEL then
+			pvpEvent:FireClient(player, "Error", "You need to reach level " .. MIN_LEVEL .. " to enable PvP!")
+			return -- 🚫 Block
 		end
 	end
 
-	-- 2. 设置属性
+	-- B. Execute status change
 	player:SetAttribute("PvPEnabled", isEnabled)
 
-	-- 3. 视觉反馈
+	-- C. Visual effects (Red outline)
 	local oldHighlight = char:FindFirstChild("PvP_Highlight")
 	if oldHighlight then oldHighlight:Destroy() end
 
@@ -60,46 +92,44 @@ local function updatePvPStatus(player, isEnabled, reason)
 		local highlight = Instance.new("Highlight")
 		highlight.Name = "PvP_Highlight"
 		highlight.Adornee = char
-		highlight.FillTransparency = 1 
-		highlight.OutlineColor = Color3.fromRGB(255, 0, 0) -- 红色轮廓
+		highlight.FillTransparency = 1 -- Transparent fill
+		highlight.OutlineColor = Color3.fromRGB(255, 0, 0) -- Red outline
 		highlight.OutlineTransparency = 0
 		highlight.Parent = char
 
-		-- 头顶名字提示
 		local humanoid = char:FindFirstChild("Humanoid")
 		if humanoid then humanoid.DisplayName = "⚔️ " .. player.Name end
 	else
-		-- 恢复名字
 		local humanoid = char:FindFirstChild("Humanoid")
 		if humanoid then humanoid.DisplayName = player.Name end
 	end
 
-	-- 4. 通知客户端更新 UI
+	-- D. Notify client to update UI
 	pvpEvent:FireClient(player, "UpdateState", isEnabled)
 
-	-- 如果有额外原因（比如被强制关闭），可以发个提示
+	-- E. Send prompt (if any)
 	if reason then
 		pvpEvent:FireClient(player, "Error", reason)
 	end
 
-	print(player.Name .. (isEnabled and " 开启了 PVP" or " 关闭了 PVP"))
+	-- print(player.Name .. (isEnabled and " enabled PvP" or " disabled PvP"))
 end
 
 -- ==========================================
--- [新增] 自动检测循环：进入安全区强制关闭
+-- 3. Auto-detection loop (Auto-disable when entering SafeZone)
 -- ==========================================
 task.spawn(function()
 	while true do
-		task.wait(0.5) -- 每 0.5 秒检查一次，性能消耗很低
+		task.wait(0.5) -- Check every 0.5 seconds
 
 		for _, player in pairs(Players:GetPlayers()) do
-			-- 只检查当前开启了 PvP 的玩家
+			-- Only check players with PvP currently enabled
 			if player:GetAttribute("PvPEnabled") then
 				local char = player.Character
 				if char and isInSafeZone(char) then
-					-- 强制关闭
-					print("🛡️ [安全区] 强制关闭 " .. player.Name .. " 的 PvP 模式")
-					updatePvPStatus(player, false, "进入安全区，PvP已自动关闭")
+					-- ⚠️ Player with active PvP ran into SafeZone -> Force disable
+					print("🛡️ [SafeZone] Forced PvP disable for " .. player.Name)
+					updatePvPStatus(player, false, "Entered SafeZone, PvP has been automatically disabled")
 				end
 			end
 		end
@@ -107,17 +137,19 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 事件监听
+-- 4. Event Listeners
 -- ==========================================
 pvpEvent.OnServerEvent:Connect(function(player, action)
 	if action == "TogglePvP" then
 		local currentState = player:GetAttribute("PvPEnabled") or false
+		-- Attempt to toggle state (SafeZone/level checks will be re-performed inside updatePvPStatus)
 		updatePvPStatus(player, not currentState)
 	end
 end)
 
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function()
+		-- Reset to disabled state on respawn
 		updatePvPStatus(player, false)
 	end)
 end)

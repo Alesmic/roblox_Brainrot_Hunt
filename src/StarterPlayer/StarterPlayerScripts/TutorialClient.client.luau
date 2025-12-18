@@ -29,6 +29,7 @@ local finishTalkEvent = RemoteEventFolder:WaitForChild("FinishTutorialTalk")
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DialogueUI"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 100
 screenGui.Parent = playerGui
 
 local dialogFrame = Instance.new("Frame")

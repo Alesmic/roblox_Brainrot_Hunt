@@ -1,78 +1,99 @@
---Rescripted by Luckymaxer
---EUROCOW WAS HERE BECAUSE I MADE THE PARTICLES AND THEREFORE THIS ENTIRE SWORD PRETTY AND LOOK PRETTY WORDS AND I'D LIKE TO DEDICATE THIS TO MY FRIENDS AND HI LUCKYMAXER PLS FIX SFOTH SWORDS TY LOVE Y'ALl
---Updated for R15 avatars by StarWars
---Re-updated by TakeoHonorable
+-- Sword/Bat Script: 终极修复版
+-- (多安全区支持 + PvP检查 + 防误触 + 任务计数)
 
-Tool = script.Parent
-Handle = Tool:WaitForChild("Handle")
+local Tool = script.Parent
+local Handle = Tool:WaitForChild("Handle")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
-function Create(ty)
-	return function(data)
-		local obj = Instance.new(ty)
-		for k, v in pairs(data) do
-			if type(k) == 'number' then
-				v.Parent = obj
-			else
-				obj[k] = v
-			end
-		end
-		return obj
-	end
-end
+-- 1. 获取配置
+local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local toolName = Tool.Name
+local weaponStats = GameConfig.Weapons[toolName] or GameConfig.Weapons["Bat"] or {Damage = 10}
 
+local BaseDamage = weaponStats.Damage or 10
+local SlashDamage = BaseDamage
+local LungeDamage = math.floor(BaseDamage * 1.5)
+local CurrentDamage = BaseDamage
+
+-- 音效
 local BaseUrl = "rbxassetid://"
-
-Players = game:GetService("Players")
-Debris = game:GetService("Debris")
-RunService = game:GetService("RunService")
-
-DamageValues = {
-	BaseDamage = 5,
-	SlashDamage = 10,
-	LungeDamage = 30
-}
-
---For R15 avatars
-Animations = {
-	R15Slash = 522635514,
-	R15Lunge = 522638767
-}
-
-Damage = DamageValues.BaseDamage
-
-Grips = {
-	Up = CFrame.new(0, 0, -1.70000005, 0, 0, 1, 1, 0, 0, 0, 1, 0),
-	Out = CFrame.new(0, 0, -1.70000005, 0, 1, 0, 1, -0, 0, 0, 0, -1)
-}
-
-Sounds = {
-	Slash = Handle:WaitForChild("SwordSlash"),
-	Lunge = Handle:WaitForChild("SwordLunge"),
-	Unsheath = Handle:WaitForChild("Unsheath")
-}
-
-ToolEquipped = false
-
---For Omega Rainbow Katana thumbnail to display a lot of particles.
-for i, v in pairs(Handle:GetChildren()) do
-	if v:IsA("ParticleEmitter") then
-		v.Rate = 20
+local function loadSound(name, id)
+	local sound = Handle:FindFirstChild(name)
+	if not sound then
+		sound = Instance.new("Sound")
+		sound.Name = name
+		sound.SoundId = BaseUrl .. id
+		sound.Volume = 0.5
+		sound.Parent = Handle
 	end
+	return sound
 end
+local Sounds = {
+	Slash = loadSound("Slash", "12222216"),
+	Lunge = loadSound("Lunge", "12222208"),
+	Unsheath = loadSound("Unsheath", "12222225")
+}
 
-Tool.Grip = Grips.Up
+-- 变量
+local ToolEquipped = false
+local Character = nil
+local Player = nil
+local Humanoid = nil
+local IsAttacking = false -- 攻击状态标记
+
 Tool.Enabled = true
 
-function IsTeamMate(Player1, Player2)
-	return (Player1 and Player2 and not Player1.Neutral and not Player2.Neutral and Player1.TeamColor == Player2.TeamColor)
+-- ==========================================
+-- [核心升级] 多安全区检测系统
+-- ==========================================
+local SafeZoneParts = {} -- 缓存所有的安全区零件
+
+-- 刷新安全区列表 (在脚本启动时运行一次)
+local function refreshSafeZones()
+	table.clear(SafeZoneParts)
+	-- 遍历 Workspace 下的所有东西，找到名字叫 "SafeZone" 的零件
+	for _, part in pairs(Workspace:GetDescendants()) do
+		if part.Name == "SafeZone" and part:IsA("BasePart") then
+			table.insert(SafeZoneParts, part)
+		end
+	end
+	-- print("🛡️ 已加载 " .. #SafeZoneParts .. " 个安全区")
 end
 
+-- 初始化加载
+refreshSafeZones()
+
+-- 检查角色是否在【任意一个】安全区内
+local function isInSafeZone(char)
+	local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+	if not rootPart then return false end
+
+	-- 只需要遍历缓存的列表，性能极高
+	for _, zonePart in pairs(SafeZoneParts) do
+		-- 确保零件还在(没被删掉)
+		if zonePart and zonePart.Parent then
+			local partsInZone = Workspace:GetPartsInPart(zonePart)
+			for _, part in pairs(partsInZone) do
+				if part == rootPart then
+					return true -- 只要在一个圈里，就算安全
+				end
+			end
+		end
+	end
+	return false
+end
+-- ==========================================
+
 function TagHumanoid(humanoid, player)
-	local Creator_Tag = Instance.new("ObjectValue")
-	Creator_Tag.Name = "creator"
-	Creator_Tag.Value = player
-	Debris:AddItem(Creator_Tag, 2)
-	Creator_Tag.Parent = humanoid
+	local creator_tag = Instance.new("ObjectValue")
+	creator_tag.Name = "creator"
+	creator_tag.Value = player
+	Debris:AddItem(creator_tag, 5) 
+	creator_tag.Parent = humanoid
 end
 
 function UntagHumanoid(humanoid)
@@ -84,161 +105,117 @@ function UntagHumanoid(humanoid)
 end
 
 function Blow(Hit)
-	if not Hit or not Hit.Parent or not CheckIfAlive() or not ToolEquipped then
-		return
-	end
-	local RightArm = Character:FindFirstChild("Right Arm") or Character:FindFirstChild("RightHand")
-	if not RightArm then
-		return
-	end
-	local RightGrip = RightArm:FindFirstChild("RightGrip")
-	if not RightGrip or (RightGrip.Part0 ~= Handle and RightGrip.Part1 ~= Handle) then
-		return
-	end
-	local character = Hit.Parent
-	if character == Character then
-		return
-	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health == 0 then
-		return
-	end
-	local player = Players:GetPlayerFromCharacter(character)
-	if player and (player == Player or IsTeamMate(Player, player)) then
+	if not Hit or not Hit.Parent or not ToolEquipped or not Player then return end
+
+	-- 1. [防误触] 如果没有在挥动，直接忽略
+	if not IsAttacking then return end
+
+	local targetChar = Hit.Parent
+	if targetChar == Character then return end
+
+	local targetHum = targetChar:FindFirstChild("Humanoid")
+	if not targetHum or targetHum.Health <= 0 then return end
+
+	-- 2. [安全区拦截] 任意一方在安全区，都无效
+	if isInSafeZone(Character) or isInSafeZone(targetChar) then
 		return
 	end
 
-	-- ==========================================
-	-- [新增] PvP 模式检查逻辑
-	-- ==========================================
-	if player then -- 只有当被打到的是"玩家"时才检查 (打怪不受影响)
-		local myPvP = Player:GetAttribute("PvPEnabled")      -- 攻击者(我)的状态
-		local targetPvP = player:GetAttribute("PvPEnabled")  -- 受击者(他)的状态
+	-- 3. [PvP拦截]
+	local targetPlayer = Players:GetPlayerFromCharacter(targetChar)
+	if targetPlayer then
+		if targetPlayer == Player then return end
+		if targetPlayer.Team and targetPlayer.Team == Player.Team then return end
 
-		-- 只有双方都开启了 PVP，才允许造成伤害
+		-- 双方必须都开启 PvP
+		local myPvP = Player:GetAttribute("PvPEnabled")
+		local targetPvP = targetPlayer:GetAttribute("PvPEnabled")
+
 		if not (myPvP and targetPvP) then
-			return -- 🚫 停止执行，不造成伤害
+			return 
 		end
 	end
-	-- ==========================================
 
-	UntagHumanoid(humanoid)
-	TagHumanoid(humanoid, Player)
-	humanoid:TakeDamage(Damage)	
+	-- 造成伤害
+	UntagHumanoid(targetHum)
+	TagHumanoid(targetHum, Player)
+	targetHum:TakeDamage(CurrentDamage)
 end
 
-
 function Attack()
-	Damage = DamageValues.SlashDamage
+	IsAttacking = true
+	CurrentDamage = SlashDamage
 	Sounds.Slash:Play()
 
 	if Humanoid then
-		if Humanoid.RigType == Enum.HumanoidRigType.R6 then
-			local Anim = Instance.new("StringValue")
-			Anim.Name = "toolanim"
-			Anim.Value = "Slash"
-			Anim.Parent = Tool
-		elseif Humanoid.RigType == Enum.HumanoidRigType.R15 then
-			local Anim = Tool:FindFirstChild("R15Slash")
-			if Anim then
-				local Track = Humanoid:LoadAnimation(Anim)
-				Track:Play(0)
-			end
-		end
-	end	
+		local anim = Instance.new("Animation")
+		anim.AnimationId = "rbxassetid://522635514"
+		local track = Humanoid:LoadAnimation(anim)
+		track:Play()
+	end
+
+	task.wait(0.5) -- 挥砍判定时间
+	IsAttacking = false
 end
 
 function Lunge()
-	Damage = DamageValues.LungeDamage
-
+	IsAttacking = true
+	CurrentDamage = LungeDamage
 	Sounds.Lunge:Play()
 
 	if Humanoid then
-		if Humanoid.RigType == Enum.HumanoidRigType.R6 then
-			local Anim = Instance.new("StringValue")
-			Anim.Name = "toolanim"
-			Anim.Value = "Lunge"
-			Anim.Parent = Tool
-		elseif Humanoid.RigType == Enum.HumanoidRigType.R15 then
-			local Anim = Tool:FindFirstChild("R15Lunge")
-			if Anim then
-				local Track = Humanoid:LoadAnimation(Anim)
-				Track:Play(0)
-			end
-		end
-	end	
-	--[[
-	if CheckIfAlive() then
-		local Force = Instance.new("BodyVelocity")
-		Force.velocity = Vector3.new(0, 10, 0) 
-		Force.maxForce = Vector3.new(0, 4000, 0)
-		Debris:AddItem(Force, 0.4)
-		Force.Parent = Torso
+		local anim = Instance.new("Animation")
+		anim.AnimationId = "rbxassetid://522638767"
+		local track = Humanoid:LoadAnimation(anim)
+		track:Play()
 	end
-	]]
 
-	wait(0.2)
-	Tool.Grip = Grips.Out
-	wait(0.6)
-	Tool.Grip = Grips.Up
+	if Character and Character:FindFirstChild("HumanoidRootPart") then
+		local bv = Instance.new("BodyVelocity")
+		bv.Velocity = Character.HumanoidRootPart.CFrame.LookVector * 50
+		bv.MaxForce = Vector3.new(10000, 0, 10000)
+		bv.Parent = Character.HumanoidRootPart
+		Debris:AddItem(bv, 0.2)
+	end
 
-	Damage = DamageValues.SlashDamage
+	task.wait(0.5)
+	CurrentDamage = SlashDamage
+	IsAttacking = false
 end
 
-Tool.Enabled = true
-LastAttack = 0
+local LastClick = 0
 
 function Activated()
-	if not Tool.Enabled or not ToolEquipped or not CheckIfAlive() then
-		return
-	end
+	if not Tool.Enabled or not ToolEquipped then return end
 	Tool.Enabled = false
-	local Tick = RunService.Stepped:wait()
-	if (Tick - LastAttack < 0.2) then
+
+	local now = tick()
+	if (now - LastClick < 0.3) then
 		Lunge()
+		LastClick = 0
 	else
 		Attack()
+		LastClick = now
 	end
-	LastAttack = Tick
-	--wait(0.5)
-	Damage = DamageValues.BaseDamage
-	local SlashAnim = (Tool:FindFirstChild("R15Slash") or Create("Animation"){
-		Name = "R15Slash",
-		AnimationId = BaseUrl .. Animations.R15Slash,
-		Parent = Tool
-	})
 
-	local LungeAnim = (Tool:FindFirstChild("R15Lunge") or Create("Animation"){
-		Name = "R15Lunge",
-		AnimationId = BaseUrl .. Animations.R15Lunge,
-		Parent = Tool
-	})
 	Tool.Enabled = true
-end
-
-function CheckIfAlive()
-	return (((Player and Player.Parent and Character and Character.Parent and Humanoid and Humanoid.Parent and Humanoid.Health > 0 and Torso and Torso.Parent) and true) or false)
 end
 
 function Equipped()
 	Character = Tool.Parent
 	Player = Players:GetPlayerFromCharacter(Character)
-	Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	Torso = Character:FindFirstChild("Torso") or Character:FindFirstChild("HumanoidRootPart")
-	if not CheckIfAlive() then
-		return
-	end
+	Humanoid = Character:FindFirstChild("Humanoid")
 	ToolEquipped = true
+	IsAttacking = false
 	Sounds.Unsheath:Play()
 end
 
 function Unequipped()
-	Tool.Grip = Grips.Up
 	ToolEquipped = false
+	IsAttacking = false
 end
 
 Tool.Activated:Connect(Activated)
 Tool.Equipped:Connect(Equipped)
 Tool.Unequipped:Connect(Unequipped)
-
-Connection = Handle.Touched:Connect(Blow)
+Handle.Touched:Connect(Blow)
