@@ -15,6 +15,10 @@ local function createOverheadSymbol()
 	billboard.Size = UDim2.new(0, 80, 0, 80)
 	billboard.StudsOffset = Vector3.new(0, 2.5, 0) 
 	billboard.AlwaysOnTop = true 
+
+	-- [核心修改] 设置最大显示距离为 100 米 (Studs)
+	billboard.MaxDistance = 100 
+
 	billboard.Parent = head
 
 	local textLabel = Instance.new("TextLabel")

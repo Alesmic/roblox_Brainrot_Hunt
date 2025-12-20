@@ -1,230 +1,195 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService") -- 引入寻路服务
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local hiddenStats = player:WaitForChild("HiddenStats")
-
--- 引入配置
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
--- 获取箭头原型
-local protoArrow = ReplicatedStorage:WaitForChild("PathArrowProto")
-
-print("✅ [QuestTracker] 任务追踪器(寻路版) 已启动...")
 
 -- ==========================================
--- 1. UI 生成 (保持不变)
+-- 1. 创建 UI (侧边栏 + 胜利大字)
 -- ==========================================
-local screenGui = playerGui:FindFirstChild("QuestTrackerGui")
-if not screenGui then
-	screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "QuestTrackerGui"
-	screenGui.ResetOnSpawn = false
-	screenGui.Parent = playerGui
-end
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "QuestTrackerUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
 
-if screenGui:FindFirstChild("TrackerFrame") then screenGui.TrackerFrame:Destroy() end
-
+-- A. 侧边栏 (任务追踪 - 保持原有风格但优化)
 local trackerFrame = Instance.new("Frame")
 trackerFrame.Name = "TrackerFrame"
-trackerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+trackerFrame.Size = UDim2.new(0, 220, 0, 100)
+trackerFrame.Position = UDim2.new(1, -240, 0.4, 0) -- 屏幕右侧
+trackerFrame.BackgroundTransparency = 0.5
+trackerFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 trackerFrame.BorderSizePixel = 0
-trackerFrame.AnchorPoint = Vector2.new(1, 1) 
-trackerFrame.Position = UDim2.new(1, -20, 1, -20)
-trackerFrame.Size = UDim2.new(0, 220, 0, 80)
-trackerFrame.Visible = false 
 trackerFrame.Parent = screenGui
+-- 给侧边栏加个圆角
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 8)
+uiCorner.Parent = trackerFrame
 
-local line = Instance.new("Frame")
-line.Size = UDim2.new(0, 4, 1, 0)
-line.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-line.Parent = trackerFrame
+local trackerTitle = Instance.new("TextLabel")
+trackerTitle.Size = UDim2.new(1, -10, 0, 25)
+trackerTitle.Position = UDim2.new(0, 10, 0, 5)
+trackerTitle.BackgroundTransparency = 1
+trackerTitle.Text = "Current Quest"
+trackerTitle.TextColor3 = Color3.new(1, 1, 1)
+trackerTitle.Font = Enum.Font.GothamBold
+trackerTitle.TextSize = 16
+trackerTitle.TextXAlignment = Enum.TextXAlignment.Left
+trackerTitle.Parent = trackerFrame
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Text = "CURRENT QUEST"
-titleLabel.Font = Enum.Font.FredokaOne
-titleLabel.TextSize = 16
-titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Size = UDim2.new(1, -15, 0.4, 0)
-titleLabel.Position = UDim2.new(0, 15, 0, 0)
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = trackerFrame
+local questLabel = Instance.new("TextLabel")
+questLabel.Name = "QuestText"
+questLabel.Size = UDim2.new(1, -20, 1, -35)
+questLabel.Position = UDim2.new(0, 10, 0, 30)
+questLabel.BackgroundTransparency = 1
+questLabel.Text = "Loading..."
+questLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+questLabel.Font = Enum.Font.Gotham
+questLabel.TextSize = 14
+questLabel.TextWrapped = true
+questLabel.TextXAlignment = Enum.TextXAlignment.Left
+questLabel.TextYAlignment = Enum.TextYAlignment.Top
+questLabel.Parent = trackerFrame
 
-local contentLabel = Instance.new("TextLabel")
-contentLabel.Text = "Loading..."
-contentLabel.Font = Enum.Font.SourceSansBold
-contentLabel.TextSize = 18
-contentLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-contentLabel.BackgroundTransparency = 1
-contentLabel.Size = UDim2.new(1, -15, 0.6, 0)
-contentLabel.Position = UDim2.new(0, 15, 0.4, 0)
-contentLabel.TextXAlignment = Enum.TextXAlignment.Left
-contentLabel.Parent = trackerFrame
+-- B. [新增] 胜利大字 UI (仿照 Boss 胜利)
+local victoryLabel = Instance.new("TextLabel")
+victoryLabel.Name = "QuestVictoryLabel"
+victoryLabel.Size = UDim2.new(1, 0, 0.2, 0)
+victoryLabel.Position = UDim2.new(0, 0, 0.3, 0) -- 屏幕中央偏上
+victoryLabel.BackgroundTransparency = 1
+victoryLabel.Text = "QUEST COMPLETED!"
+victoryLabel.TextColor3 = Color3.fromRGB(255, 215, 0) -- 金色
+victoryLabel.Font = Enum.Font.FredokaOne -- 卡通粗体，很醒目
+victoryLabel.TextSize = 60
+victoryLabel.TextStrokeTransparency = 0 -- 黑色描边
+victoryLabel.TextStrokeColor3 = Color3.new(0,0,0)
+victoryLabel.Visible = false -- 默认隐藏
+victoryLabel.ZIndex = 10 -- 保证在最上层
+victoryLabel.Parent = screenGui
 
 -- ==========================================
--- 2. 动态寻路导航系统 (核心升级)
+-- 2. 逻辑处理
 -- ==========================================
-local currentTargetPos = nil
-local pathArrowsFolder = nil -- 用于存放生成的箭头
-local lastPathUpdateTime = 0
-local PATH_UPDATE_INTERVAL = 0.5 -- 每0.5秒更新一次路径，防止卡顿
+local completedQuestsCache = {} -- 缓存表：记录哪些任务已经弹过窗了
 
--- 初始化或清理箭头文件夹
-local function getArrowFolder()
-	if not pathArrowsFolder or not pathArrowsFolder.Parent then
-		pathArrowsFolder = Instance.new("Folder")
-		pathArrowsFolder.Name = "QuestPathVisuals_Local"
-		pathArrowsFolder.Parent = workspace
-	end
-	return pathArrowsFolder
-end
+-- 显示大字动画函数
+local function showVictoryAnimation(text)
+	victoryLabel.Text = text
+	victoryLabel.Visible = true
+	victoryLabel.TextTransparency = 0
+	victoryLabel.TextStrokeTransparency = 0
+	victoryLabel.Position = UDim2.new(0, 0, 0.4, 0) -- 起始位置 (稍低一点)
 
--- 清理所有箭头
-local function clearArrows()
-	if pathArrowsFolder then
-		pathArrowsFolder:ClearAllChildren()
-	end
-end
-
--- 核心：计算并绘制路径
-local function drawPath()
-	local now = tick()
-	-- 节流控制：如果距离上次更新还没到时间，就跳过
-	if now - lastPathUpdateTime < PATH_UPDATE_INTERVAL then return end
-	lastPathUpdateTime = now
-
-	-- 如果没有目标或玩家角色不存在，清理箭头并退出
-	if not currentTargetPos or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-		clearArrows()
-		return
-	end
-
-	local rootPart = player.Character.HumanoidRootPart
-	local folder = getArrowFolder()
-
-	-- 1. 创建路径参数 (根据你的游戏角色大小调整)
-	local path = PathfindingService:CreatePath({
-		AgentRadius = 3,     -- 代理半径 (越大约容易避开障碍)
-		AgentHeight = 5,     -- 代理高度
-		AgentCanJump = true, -- 是否允许跳跃寻找路径
-		WaypointSpacing = 4  -- 航点间距 (决定箭头的密度)
+	-- 1. 向上浮动 + 弹性进入
+	local tweenIn = TweenService:Create(victoryLabel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(0, 0, 0.3, 0)
 	})
+	tweenIn:Play()
 
-	-- 2. 计算路径
-	local success, errorMessage = pcall(function()
-		path:ComputeAsync(rootPart.Position, currentTargetPos)
+	-- 播放个简单的音效 (通用提示音)
+	local sound = Instance.new("Sound", workspace)
+	sound.SoundId = "rbxassetid://12221967" -- 欢呼/提示音效
+	sound.Volume = 1
+	sound:Play()
+	task.delay(2, function() sound:Destroy() end)
+
+	-- 2. 停留 3 秒后 -> 淡出 + 继续上浮
+	task.delay(3, function()
+		local tweenOut = TweenService:Create(victoryLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+			Position = UDim2.new(0, 0, 0.2, 0) 
+		})
+		tweenOut:Play()
+
+		tweenOut.Completed:Connect(function()
+			victoryLabel.Visible = false
+		end)
 	end)
+end
 
-	if success and path.Status == Enum.PathStatus.Success then
-		-- 计算成功，开始绘制
-		folder:ClearAllChildren() -- 先清除旧的
+-- 更新任务追踪器
+local function updateQuestTracker()
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	if not hiddenStats then 
+		questLabel.Text = "No data..."
+		return 
+	end
 
-		local waypoints = path:GetWaypoints()
+	local activeQuestText = "No active quests."
+	local hasActive = false
 
-		-- 从第2个航点开始遍历 (第1个是脚下，不需要)
-		-- 步长为 2 (i = i + 2)，意味着每隔一个航点放一个箭头，避免太密集
-		for i = 2, #waypoints, 2 do 
-			local wp = waypoints[i]
-			local nextWp = waypoints[i+1] -- 获取下一个航点用于确定朝向
+	-- 遍历配置中的所有任务
+	if GameConfig.Quests then
+		for questID, questData in pairs(GameConfig.Quests) do
+			local questStatName = "Quest_" .. questID
+			local statValue = hiddenStats:FindFirstChild(questStatName)
 
-			if wp.Action == Enum.PathWaypointAction.Walk then
-				local arrow = protoArrow:Clone()
-				-- 设置位置：在航点上方一点点，防止埋地里
-				local pos = wp.Position + Vector3.new(0, 0.3, 0)
+			-- 如果玩家有这个任务的进度数据
+			if statValue then
+				local current = statValue.Value
+				local target = questData.TargetCount
 
-				-- 设置朝向
-				if nextWp then
-					-- 让箭头指向下一个航点，但保持水平 (忽略Y轴差异)
-					local lookAtFlat = Vector3.new(nextWp.Position.X, pos.Y, nextWp.Position.Z)
-					arrow.CFrame = CFrame.lookAt(pos, lookAtFlat)
+				-- 检查是否完成
+				if current >= target then
+					-- [关键] 如果是第一次检测到完成，就弹窗
+					if not completedQuestsCache[questID] then
+						completedQuestsCache[questID] = true
+						print("🎉 Quest Completed: " .. questID)
+						showVictoryAnimation("QUEST COMPLETED!")
+					end
 				else
-					-- 如果没有下一个航点 (已经是终点前最后一个)，指向最终目标
-					local lookAtFlat = Vector3.new(currentTargetPos.X, pos.Y, currentTargetPos.Z)
-					arrow.CFrame = CFrame.lookAt(pos, lookAtFlat)
+					-- 如果还没完成，并且还没显示其他任务，就显示在这个侧边栏
+					-- (如果你想显示所有任务，可以拼接字符串)
+					if not hasActive then
+						-- 只有没完成的任务才显示在侧边栏
+						activeQuestText = string.format("%s\n\n🎯 Progress: %d / %d\n💰 Reward: %d Gold", 
+							questData.Name or "Unknown Quest", 
+							current, 
+							target,
+							questData.GoldReward or 0
+						)
+						hasActive = true
+						-- 这里不return，继续循环，以免漏掉其他任务的完成检测
+					end
+					-- 标记这个任务未完成，防止以后重复弹窗逻辑出错
+					completedQuestsCache[questID] = false 
 				end
-
-				arrow.Parent = folder
 			end
 		end
-	else
-		-- 寻路失败 (比如目标在墙里，或者太远)
-		-- 可以在这里做一个简单的直线箭头作为后备，或者暂时清空
-		clearArrows()
-		-- warn("Pathfinding failed: " .. tostring(errorMessage)) 
 	end
+
+	questLabel.Text = activeQuestText
 end
-
--- 绑定到心跳，但函数内部有节流控制
-RunService.Heartbeat:Connect(drawPath)
-
 
 -- ==========================================
--- 3. 任务更新逻辑 (适配新导航)
+-- 3. 启动监听
 -- ==========================================
+task.spawn(function()
+	local hiddenStats = player:WaitForChild("HiddenStats", 10)
+	if hiddenStats then
+		print("✅ [QuestTracker] Connected to HiddenStats")
 
-local function updateQuestUI(questName, currentVal)
-	local realQuestID = string.gsub(questName, "Quest_", "")
-	local config = GameConfig.Quests[realQuestID]
+		-- 监听新任务添加
+		hiddenStats.ChildAdded:Connect(function(child)
+			if child:IsA("IntValue") then
+				child.Changed:Connect(updateQuestTracker)
+				updateQuestTracker()
+			end
+		end)
 
-	if config then
-		trackerFrame.Visible = true
-
-		local val = tonumber(currentVal) or 0
-		local target = tonumber(config.TargetCount) or 10
-
-		-- [设置导航目标]
-		if config.TargetPosition then
-			currentTargetPos = config.TargetPosition
-			-- 立即触发一次绘制，无需等待心跳
-			lastPathUpdateTime = 0 
-			drawPath()
+		-- 监听现有任务变化
+		for _, child in pairs(hiddenStats:GetChildren()) do
+			if child:IsA("IntValue") then
+				child.Changed:Connect(updateQuestTracker)
+			end
 		end
 
-		if val >= target then
-			-- 任务完成
-			contentLabel.Text = "Challenge Success"
-			contentLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-
-			-- [关闭导航]
-			currentTargetPos = nil
-			clearArrows()
-
-			task.wait(3)
-			trackerFrame.Visible = false
-		else
-			-- 任务进行中
-			contentLabel.Text = config.Name .. ": " .. val .. " / " .. target
-			contentLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-		end
+		-- 初始刷新
+		updateQuestTracker()
 	else
-		warn("❌ [QuestTracker] 配置缺失: " .. realQuestID)
+		warn("❌ [QuestTracker] Could not find HiddenStats")
 	end
-end
-
-local function trackQuestValue(questVal)
-	updateQuestUI(questVal.Name, questVal.Value)
-	questVal.Changed:Connect(function(newVal)
-		updateQuestUI(questVal.Name, newVal)
-	end)
-end
-
--- 监听 HiddenStats
-for _, child in pairs(hiddenStats:GetChildren()) do
-	if string.sub(child.Name, 1, 6) == "Quest_" then
-		trackQuestValue(child)
-	end
-end
-
-hiddenStats.ChildAdded:Connect(function(child)
-	if string.sub(child.Name, 1, 6) == "Quest_" then
-		trackQuestValue(child)
-	end
-end)
-
--- 玩家重生时清理残留箭头
-player.CharacterRemoving:Connect(function()
-	clearArrows()
 end)

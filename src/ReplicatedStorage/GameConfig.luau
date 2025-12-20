@@ -200,7 +200,7 @@ GameConfig.Mobs = {
 	},
 
 	-- Forest Boss (Unlocked at Lvl 50)
-	["AntBoss"] = { 
+	["WolfBoss"] = { 
 		Name = "AntBoss", 
 		MaxHealth = 2000,   
 		Damage = 40,

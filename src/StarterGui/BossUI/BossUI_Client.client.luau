@@ -7,14 +7,14 @@ local playerGui = player:WaitForChild("PlayerGui")
 local BossEvent = ReplicatedStorage:WaitForChild("RemoteEvent"):WaitForChild("BossEvent")
 
 -- ==========================================
--- 创建 UI (确认框 + 结果字 + 倒计时框)
+-- Create UI (Confirmation Window + Result Text + Countdown Window)
 -- ==========================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BossRoomUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
--- 1. 确认弹窗 (Challenge?)
+-- 1. Confirmation Popup (Challenge?)
 local confirmFrame = Instance.new("Frame")
 confirmFrame.Size = UDim2.new(0, 300, 0, 150)
 confirmFrame.Position = UDim2.new(0.5, -150, 0.5, -75)
@@ -53,7 +53,7 @@ noBtn.Font = Enum.Font.GothamBold
 noBtn.Parent = confirmFrame
 Instance.new("UICorner", noBtn).CornerRadius = UDim.new(0, 6)
 
--- 2. 结果显示 (Victory / Defeat)
+-- 2. Result Display (Victory / Defeat)
 local resultLabel = Instance.new("TextLabel")
 resultLabel.Size = UDim2.new(1, 0, 0.2, 0)
 resultLabel.Position = UDim2.new(0, 0, 0.3, 0)
@@ -64,11 +64,11 @@ resultLabel.TextStrokeTransparency = 0
 resultLabel.Visible = false
 resultLabel.Parent = screenGui
 
--- [新增] 3. 复活倒计时弹窗 (Respawn Timer)
+-- [Added] 3. Respawn Countdown Popup (Respawn Timer)
 local respawnFrame = Instance.new("Frame")
 respawnFrame.Size = UDim2.new(0, 300, 0, 120)
 respawnFrame.Position = UDim2.new(0.5, -150, 0.5, -60)
-respawnFrame.BackgroundColor3 = Color3.fromRGB(44, 62, 80) -- 深蓝灰
+respawnFrame.BackgroundColor3 = Color3.fromRGB(44, 62, 80) -- Deep blue-gray
 respawnFrame.Visible = false
 respawnFrame.Parent = screenGui
 Instance.new("UICorner", respawnFrame).CornerRadius = UDim.new(0, 10)
@@ -87,12 +87,12 @@ timerLabel.Size = UDim2.new(1, 0, 0.4, 0)
 timerLabel.Position = UDim2.new(0, 0, 0.4, 0)
 timerLabel.BackgroundTransparency = 1
 timerLabel.Text = "00:00"
-timerLabel.TextColor3 = Color3.fromRGB(231, 76, 60) -- 红色时间
+timerLabel.TextColor3 = Color3.fromRGB(231, 76, 60) -- Red timer
 timerLabel.Font = Enum.Font.FredokaOne
 timerLabel.TextSize = 36
 timerLabel.Parent = respawnFrame
 
--- 关闭按钮
+-- Close button
 local closeRespawnBtn = Instance.new("TextButton")
 closeRespawnBtn.Size = UDim2.new(0.08, 0, 0.2, 0)
 closeRespawnBtn.Position = UDim2.new(0.9, 0, 0, 0)
@@ -103,32 +103,36 @@ closeRespawnBtn.Font = Enum.Font.GothamBold
 closeRespawnBtn.Parent = respawnFrame
 
 -- ==========================================
--- 逻辑处理
+-- Logic Handling
 -- ==========================================
-
--- 确认框
+local currentTargetBossName = "Saharan Master"
+-- Confirmation window
 yesBtn.MouseButton1Click:Connect(function()
 	confirmFrame.Visible = false
-	BossEvent:FireServer("EnterBossRoom")
+	-- [Core Fix] 2. Send current Boss name back to server
+	BossEvent:FireServer("EnterBossRoom", currentTargetBossName)
 end)
 
 noBtn.MouseButton1Click:Connect(function()
 	confirmFrame.Visible = false
 end)
 
--- 倒计时框关闭
+-- Close countdown window
 closeRespawnBtn.MouseButton1Click:Connect(function()
 	respawnFrame.Visible = false
 end)
 
-local countdownCoroutine = nil -- 用于管理倒计时协程
+local countdownCoroutine = nil -- For managing countdown coroutine
 
--- 监听服务器事件
+-- Listen for server events
 BossEvent.OnClientEvent:Connect(function(action, data)
 	if action == "ShowConfirm" then
+		-- [Core Fix] 3. Receive Boss name from server (e.g. "AntBoss")
+		currentTargetBossName = data 
+
 		confirmFrame.Visible = true
 		respawnFrame.Visible = false
-		title.Text = data or "Challenge Boss?"
+		title.Text = "Challenge " .. data .. "?"
 
 	elseif action == "ShowResult" then
 		resultLabel.Text = string.upper(data) -- "VICTORY" or "DEFEAT"
@@ -150,13 +154,13 @@ BossEvent.OnClientEvent:Connect(function(action, data)
 		end)
 
 	elseif action == "ShowRespawnCountDown" then
-		-- [新增] 显示倒计时
-		-- data = {Name = "BossName", Time = 剩余秒数}
+		-- [Added] Show countdown
+		-- data = {Name = "BossName", Time = Remaining seconds}
 		respawnFrame.Visible = true
 		confirmFrame.Visible = false
 		respawnTitle.Text = data.Name .. " Respawns in:"
 
-		-- 重置之前的倒计时
+		-- Reset previous countdown
 		if countdownCoroutine then task.cancel(countdownCoroutine) end
 
 		local timeLeft = data.Time

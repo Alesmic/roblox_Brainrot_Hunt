@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
 -- ==========================================
--- 0. 自动补全必要的事件
+-- 0. Auto-create required events
 -- ==========================================
 local RemoteEventFolder = ReplicatedStorage:FindFirstChild("RemoteEvent") or Instance.new("Folder", ReplicatedStorage)
 RemoteEventFolder.Name = "RemoteEvent"
@@ -16,27 +16,28 @@ local BossDeathNotify = ServerStorage:FindFirstChild("BossDeathNotify") or Insta
 BossDeathNotify.Name = "BossDeathNotify"
 
 -- ==========================================
--- 配置区 (不再写死单一 Boss)
+-- Configuration Area (No longer hardcoded to single Boss)
 -- ==========================================
--- 状态记录: { [UserId] = {BossName = "xxx", RoomFolder = Folder} }
+-- State record: { [UserId] = {BossName = "xxx", RoomFolder = Folder} }
 local playersInBossFight = {}
 
--- 辅助函数：根据 Boss 名字找到对应的房间配置
--- 假设你的地图结构是: Workspace -> Boss Area (Saharan Master) -> BossArenaSpawn
---                     Workspace -> Boss Area (New Boss) -> BossArenaSpawn
--- 建议给每个 Boss 房间的文件夹起个独特的名字，或者在这里做个映射表
+-- Helper function: Find corresponding room configuration by Boss name
+-- Assumed map structure: Workspace -> Boss Area (Saharan Master) -> BossArenaSpawn
+--                       Workspace -> Boss Area (New Boss) -> BossArenaSpawn
+-- Recommend giving each Boss room folder a unique name, or create a mapping table here
 local BOSS_LOCATIONS = {
-	["Saharan Master"] = "Boss Area", -- 对应 Workspace["Boss Area"]
-	["Forest King"] = "Forest Boss Area", -- <--- [新增] 你的新 Boss 房间文件夹名字
-	-- 在这里添加更多 Boss...
+	["Saharan Master"] = "Boss Area", -- Corresponding to Workspace["Boss Area"]
+	["WolfBoss"] = "Forest Boss Area", -- <--- [Added] Your new Boss room folder name
+	["DesertBoss"] = "Desert Boss Area",
+	-- Add more Bosses here...
 }
 
 local function getLocations(bossName)
-	local areaName = BOSS_LOCATIONS[bossName] or "Boss Area" -- 默认值
+	local areaName = BOSS_LOCATIONS[bossName] or "Boss Area" -- Default value
 	local area = Workspace:FindFirstChild(areaName)
 
 	if not area then 
-		-- 尝试直接在 Workspace 找以 Boss 名字命名的文件夹
+		-- Try to find folder named with Boss name directly in Workspace
 		area = Workspace:FindFirstChild(bossName .. " Room") 
 	end
 
@@ -45,51 +46,51 @@ local function getLocations(bossName)
 end
 
 -- ==========================================
--- 1. 玩家进入逻辑
+-- 1. Player entry logic
 -- ==========================================
 BossEvent.OnServerEvent:Connect(function(player, action, arg1)
 	if action == "EnterBossRoom" then
-		-- 客户端现在应该发送 Boss 名字: BossEvent:FireServer("EnterBossRoom", "Saharan Master")
-		local bossName = arg1 or "Saharan Master" -- 兼容旧代码，默认为 Saharan Master
+		-- Client should now send Boss name: BossEvent:FireServer("EnterBossRoom", "Saharan Master")
+		local bossName = arg1 or "Saharan Master" -- Backward compatibility with old code, default to Saharan Master
 
-		print("👉 [BossRoom] 玩家 " .. player.Name .. " 请求挑战: " .. bossName)
+		print("👉 [BossRoom] Player " .. player.Name .. " requests to challenge: " .. bossName)
 
 		local spawnPoint, exitPoint = getLocations(bossName)
 		if not spawnPoint then 
-			warn("❌ [BossRoom] 找不到传送点，请检查 BOSS_LOCATIONS 配置")
+			warn("❌ [BossRoom] Teleport points not found, please check BOSS_LOCATIONS configuration")
 			return 
 		end
 
-		-- 检查 Boss 是否存在 (防作弊)
+		-- Check if Boss exists (anti-cheat)
 		local boss = Workspace:WaitForChild("NPCs"):FindFirstChild(bossName)
 		if not boss then
 			BossEvent:FireClient(player, "Error", "Boss is respawning (Cooldown 5min)")
 			return
 		end
 
-		-- 传送
+		-- Teleport player
 		local char = player.Character
 		if char and char:FindFirstChild("HumanoidRootPart") then
 			char.HumanoidRootPart.CFrame = spawnPoint.CFrame + Vector3.new(0, 3, 0)
 
-			-- 记录玩家正在打哪个 Boss
+			-- Record which Boss the player is fighting
 			playersInBossFight[player.UserId] = {
 				Name = bossName,
 				ExitPoint = exitPoint
 			}
 
-			-- 监听死亡 (失败判定)
+			-- Listen for death (defeat condition)
 			local humanoid = char:FindFirstChild("Humanoid")
 			if humanoid then
 				humanoid.Died:Connect(function()
 					local fightInfo = playersInBossFight[player.UserId]
 					if fightInfo then
-						print("💀 [BossRoom] 玩家失败: " .. player.Name)
+						print("💀 [BossRoom] Player defeated: " .. player.Name)
 						playersInBossFight[player.UserId] = nil 
 
 						BossEvent:FireClient(player, "ShowResult", "Defeat")
 						player:SetAttribute("RespawnAtBossExit", true)
-						-- 临时存一下出口位置名，以便复活脚本找到
+						-- Temporarily store exit point name for respawn script to find
 						player:SetAttribute("ExitTargetName", fightInfo.Name) 
 					end
 				end)
@@ -99,7 +100,7 @@ BossEvent.OnServerEvent:Connect(function(player, action, arg1)
 end)
 
 -- ==========================================
--- 2. 玩家复活处理
+-- 2. Player respawn handling
 -- ==========================================
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function(char)
@@ -120,20 +121,20 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 -- ==========================================
--- 3. Boss 死亡逻辑 (胜利处理)
+-- 3. Boss death logic (Victory handling)
 -- ==========================================
 BossDeathNotify.Event:Connect(function(deadBossName)
-	print("⚔️ [BossRoom] 收到死亡通知: " .. tostring(deadBossName))
+	print("⚔️ [BossRoom] Received death notification: " .. tostring(deadBossName))
 
 	for userId, fightInfo in pairs(playersInBossFight) do
-		-- 只有正在打这个 Boss 的玩家才算赢
+		-- Only players fighting this Boss count as victorious
 		if fightInfo.Name == deadBossName then
 			local player = Players:GetPlayerByUserId(userId)
 			if player then
-				print("🏆 [BossRoom] 胜利: " .. player.Name)
+				print("🏆 [BossRoom] Victory: " .. player.Name)
 				BossEvent:FireClient(player, "ShowResult", "Victory")
 
-				-- 3秒后踢出
+				-- Kick player out after 3 seconds
 				task.delay(3, function()
 					local char = player.Character
 					if char and char:FindFirstChild("HumanoidRootPart") and fightInfo.ExitPoint then
@@ -141,7 +142,7 @@ BossDeathNotify.Event:Connect(function(deadBossName)
 					end
 				end)
 			end
-			-- 清除状态
+			-- Clear state
 			playersInBossFight[userId] = nil
 		end
 	end

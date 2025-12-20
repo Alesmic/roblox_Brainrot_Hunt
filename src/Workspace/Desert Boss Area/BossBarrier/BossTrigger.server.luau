@@ -9,8 +9,8 @@ local MobHandler = require(ServerScriptService:WaitForChild("MobHandler"))
 -- ==========================================
 -- [Configuration] Original Boss name
 -- ==========================================
-local BOSS_NAME = "Saharan Master" -- <--- Ensure this is your original Boss name
-local MIN_LEVEL = 20
+local BOSS_NAME = "DesertBoss" -- <--- Ensure this is your original Boss name
+local MIN_LEVEL = 99
 -- ==========================================
 
 local triggerPart = script.Parent
