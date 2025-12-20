@@ -4,11 +4,89 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- Require GameConfig for correct health calculation on level-up
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
+-- 👑 管理员列表 (可选：如果你只想让自己能用，填入 UserID)
+local ADMINS = {
+	-- 12345678, -- 替换为你的 UserId
+}
+
+-- 简单的权限检查函数
+local function isAdmin(player)
+	-- 目前默认允许所有人使用方便测试
+	-- 如果需要开启权限，取消下面注释并把 true 改为 false
+	-- for _, id in pairs(ADMINS) do if player.UserId == id then return true end end
+	return true 
+end
+
+-- ==========================================
+-- 🛠️ 核心重置逻辑函数 (提取出来方便复用)
+-- ==========================================
+local function resetPlayerData(targetPlayer)
+	print("🔄 [Admin] 正在重置玩家数据: " .. targetPlayer.Name)
+
+	-- 1. 重置基础属性 (Level, Gold, Experience)
+	local leaderstats = targetPlayer:FindFirstChild("leaderstats")
+	if leaderstats then
+		if leaderstats:FindFirstChild("Level") then 
+			leaderstats.Level.Value = GameConfig.DefaultPlayer.Level or 1 
+		end
+		if leaderstats:FindFirstChild("Gold") then 
+			leaderstats.Gold.Value = GameConfig.DefaultPlayer.Gold or 0 
+		end
+		-- 如果有 Experience
+		if leaderstats:FindFirstChild("Experience") then
+			leaderstats.Experience.Value = GameConfig.DefaultPlayer.Experience or 0
+		end
+	end
+
+	-- 2. 重置隐藏属性 (教程状态, 任务)
+	local hiddenStats = targetPlayer:FindFirstChild("HiddenStats")
+	if hiddenStats then
+		-- 重置教程状态 (设为 false，这样重进或重生后 TutorialClient 会重新触发)
+		if hiddenStats:FindFirstChild("TutorialCompleted") then
+			hiddenStats.TutorialCompleted.Value = false
+			print("    📘 教程状态已重置")
+		end
+
+		-- 删除所有任务 (假设任务对象是 IntValue 且名字可能包含 Quest)
+		for _, child in pairs(hiddenStats:GetChildren()) do
+			-- 如果是任务 (通常 Quest_SamuraiSlayer 这种)
+			if string.find(child.Name, "Quest") then
+				child:Destroy()
+				print("    🗑️ 已移除任务: " .. child.Name)
+			end
+		end
+	end
+
+	-- 3. 清空背包数据 (Inventory Folder)
+	local inventory = targetPlayer:FindFirstChild("Inventory")
+	if inventory then
+		inventory:ClearAllChildren()
+		print("    🎒 背包数据已清空")
+	end
+
+	-- 4. 清空实体道具 (Backpack & StarterGear)
+	targetPlayer.Backpack:ClearAllChildren()
+	targetPlayer.StarterGear:ClearAllChildren()
+
+	-- 5. 重置角色 (重生以刷新 UI 和客户端状态)
+	if targetPlayer.Character then
+		local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
+		if humanoid then
+			humanoid.Health = 0 -- 赐死玩家，强制重生
+		end
+	end
+
+	print("✅ " .. targetPlayer.Name .. " 的数据已全部重置！")
+end
+
+
 -- Listen for players joining
 Players.PlayerAdded:Connect(function(player)
 
 	-- Listen for player chat messages
 	player.Chatted:Connect(function(message)
+		-- 权限检查 (如果 isAdmin 返回 true 则放行)
+		if not isAdmin(player) then return end
 
 		-- Split the message into words (e.g., "/lv 50" splits into "/lv" and "50")
 		local args = string.split(message, " ")
@@ -18,6 +96,28 @@ Players.PlayerAdded:Connect(function(player)
 		-- Get the player's data folder
 		local leaderstats = player:FindFirstChild("leaderstats")
 		if not leaderstats then return end
+
+		-- ============================
+		-- Command 0: Reset Player (/reset) [新增]
+		-- ============================
+		if command == "/reset" then
+			resetPlayerData(player)
+		end
+
+		-- 重置指定玩家: /resetall 玩家名
+		if command == "/resetall" then
+			local targetName = args[2]
+			if targetName then
+				local target = Players:FindFirstChild(targetName)
+				if target then
+					resetPlayerData(target)
+				else
+					print("❌ 找不到玩家: " .. targetName)
+				end
+			else
+				resetPlayerData(player) -- 没填名字就重置自己
+			end
+		end
 
 		-- ============================
 		-- Command 1: Set Level (/lv or /level)
@@ -33,7 +133,9 @@ Players.PlayerAdded:Connect(function(player)
 				local humanoid = character and character:FindFirstChild("Humanoid")
 
 				if humanoid then
-					local levelBonus = (value - 1) * GameConfig.Leveling.RewardsPerLevel.HealthBonus
+					-- Ensure RewardsPerLevel exists
+					local rewards = GameConfig.Leveling and GameConfig.Leveling.RewardsPerLevel or {HealthBonus = 10}
+					local levelBonus = (value - 1) * rewards.HealthBonus
 					local newMaxHealth = GameConfig.DefaultPlayer.MaxHealth + levelBonus
 
 					humanoid.MaxHealth = newMaxHealth
@@ -65,17 +167,22 @@ Players.PlayerAdded:Connect(function(player)
 				print("⚙️ Admin: Speed set to " .. value)
 			end
 		end
+
 		-- ============================
 		-- Command 4: Give Item (/give ItemName)
-		-- Usage: /give "Iron Katana" (Use quotes if the name has spaces, or input the name without spaces)
-		-- Simple Usage: /give IronKatana (The code will try to match by removing spaces, or you need exact input)
 		-- ============================
 		if command == "/give" then
-			-- Concatenate all subsequent arguments as the item name (e.g., /give Iron Katana -> "Iron Katana")
+			-- Concatenate all subsequent arguments as the item name
 			local itemName = string.sub(message, 7) -- Extract from the 7th character
 
-			-- Check if the item exists in GameConfig
-			local itemInfo = GameConfig.Weapons[itemName] or GameConfig.Items[itemName]
+			-- Trim leading spaces just in case
+			itemName = itemName:match("^%s*(.-)%s*$")
+
+			-- Check if the item exists in GameConfig (Weapons, Items, or Skin)
+			local itemInfo = nil
+			if GameConfig.Weapons then itemInfo = GameConfig.Weapons[itemName] end
+			if not itemInfo and GameConfig.Items then itemInfo = GameConfig.Items[itemName] end
+			if not itemInfo and GameConfig.Skin then itemInfo = GameConfig.Skin[itemName] end
 
 			if itemInfo then
 				local inventory = player:FindFirstChild("Inventory")
@@ -91,11 +198,16 @@ Players.PlayerAdded:Connect(function(player)
 					itemValue.Value = itemValue.Value + 1
 
 					-- 2. If it's a weapon, also give the physical Tool
-					if GameConfig.Weapons[itemName] then
+					if GameConfig.Weapons and GameConfig.Weapons[itemName] then
 						local tool = game.ServerStorage.Tools:FindFirstChild(itemName)
 						if tool then
-							tool:Clone().Parent = player.Backpack
-							tool:Clone().Parent = player.StarterGear
+							-- 检查唯一性，防止重复给
+							if not player.Backpack:FindFirstChild(itemName) then
+								tool:Clone().Parent = player.Backpack
+							end
+							if not player.StarterGear:FindFirstChild(itemName) then
+								tool:Clone().Parent = player.StarterGear
+							end
 						end
 					end
 

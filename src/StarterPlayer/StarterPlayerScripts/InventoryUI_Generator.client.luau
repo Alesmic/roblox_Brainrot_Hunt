@@ -1,113 +1,123 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- 1. 创建主 ScreenGui
+-- 1. 清理旧界面 (防止重叠)
+if playerGui:FindFirstChild("InventoryGui") then
+	playerGui.InventoryGui:Destroy()
+end
+
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RPG_Inventory"
-screenGui.ResetOnSpawn = false --以此确保重生后界面不会消失/重置
+screenGui.Name = "InventoryGui" -- 必须叫这个名字
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 1
 screenGui.Parent = playerGui
+screenGui.DisplayOrder = -10
 
--- 2. 创建打开按钮 (ITEMS)
-local openBtn = Instance.new("TextButton")
-openBtn.Name = "OpenInventoryBtn"
-openBtn.Size = UDim2.new(0, 100, 0, 50)
-openBtn.Position = UDim2.new(0, 20, 0.4, 0)
-openBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-openBtn.Text = "ITEMS"
-openBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-openBtn.TextScaled = true
-openBtn.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.Parent = openBtn
-
--- 3. 创建背包主框架
+-- ==========================================
+-- A. 背包主窗口 (默认隐藏)
+-- ==========================================
 local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 500, 0, 400)
-mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.Name = "MainFrame" -- 必须叫 MainFrame
+mainFrame.Size = UDim2.new(0.5, 0, 0.4, 0)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+mainFrame.BorderSizePixel = 0
 mainFrame.Visible = false
 mainFrame.Parent = screenGui
 
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
 -- 标题
-local title = Instance.new("TextLabel")
-title.Name = "TitleLabel"
-title.Text = "INVENTORY"
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Font = Enum.Font.FredokaOne
-title.TextSize = 24
-title.Parent = mainFrame
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, -20, 0, 40)
+titleLabel.Position = UDim2.new(0, 10, 0, 5)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "INVENTORY"
+titleLabel.Font = Enum.Font.FredokaOne
+titleLabel.TextSize = 24
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = mainFrame
 
--- [关键修复] 关闭按钮
+-- 关闭按钮
 local closeBtn = Instance.new("TextButton")
-closeBtn.Name = "CloseButton" -- 这里确保有名字
-closeBtn.Text = "X"
-closeBtn.Size = UDim2.new(0, 40, 0, 40)
-closeBtn.Position = UDim2.new(1, -40, 0, 0)
+closeBtn.Name = "CloseButton"
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 5)
 closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.Font = Enum.Font.FredokaOne
+closeBtn.TextSize = 18
 closeBtn.Parent = mainFrame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
 
--- 4. 分页按钮文件夹
-local tabFolder = Instance.new("Folder")
-tabFolder.Name = "Tabs"
-tabFolder.Parent = mainFrame
-
-local function createTab(name, text, xPos)
-	local btn = Instance.new("TextButton")
-	btn.Name = name
-	btn.Text = text
-	btn.Size = UDim2.new(0.5, 0, 0, 40)
-	btn.Position = UDim2.new(xPos, 0, 0.1, 0)
-	btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Parent = tabFolder
-	return btn
-end
-
-local backpackTab = createTab("BackpackTab", "Backpack", 0)
-local wardrobeTab = createTab("WardrobeTab", "Wardrobe", 0.5)
-
--- 5. 物品滚动列表 (之前报错 Infinite yield 的原因是因为这里没生成成功)
+-- 物品容器
 local scrollingFrame = Instance.new("ScrollingFrame")
-scrollingFrame.Name = "ScrollingFrame" -- 确保有名字
-scrollingFrame.Size = UDim2.new(0.9, 0, 0.6, 0)
-scrollingFrame.Position = UDim2.new(0.05, 0, 0.25, 0)
-scrollingFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+scrollingFrame.Name = "Container" -- 必须叫 Container
+scrollingFrame.Size = UDim2.new(1, -20, 1, -60)
+scrollingFrame.Position = UDim2.new(0, 10, 0, 50)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollingFrame.ScrollBarThickness = 6
 scrollingFrame.Parent = mainFrame
 
 local gridLayout = Instance.new("UIGridLayout")
-gridLayout.CellSize = UDim2.new(0, 100, 0, 120)
+gridLayout.CellSize = UDim2.new(0, 90, 0, 90)
+gridLayout.CellPadding = UDim2.new(0, 10, 0, 10)
 gridLayout.Parent = scrollingFrame
 
--- 6. 操作区域
-local actionFrame = Instance.new("Frame")
-actionFrame.Name = "Frame" -- 这里的名字要和 Controller 里对应
-actionFrame.Size = UDim2.new(1, 0, 0.15, 0)
-actionFrame.Position = UDim2.new(0, 0, 0.85, 0)
-actionFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-actionFrame.Parent = mainFrame
+-- ==========================================
+-- B. 圆形背包按钮 (左侧居中)
+-- ==========================================
+local toggleBtn = Instance.new("ImageButton")
+toggleBtn.Name = "ToggleInventoryBtn"
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Position = UDim2.new(0, 10, 0.4, 0) -- 屏幕左侧
+toggleBtn.AnchorPoint = Vector2.new(0, 0.5) 
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleBtn.BackgroundTransparency = 0.4
+toggleBtn.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png" 
+toggleBtn.Parent = screenGui
 
-local infoLabel = Instance.new("TextLabel")
-infoLabel.Name = "InfoLabel"
-infoLabel.Text = "Select an item..."
-infoLabel.Size = UDim2.new(0.6, 0, 1, 0)
-infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-infoLabel.BackgroundTransparency = 1
-infoLabel.Parent = actionFrame
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0) -- 圆形
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 215, 0)
+stroke.Thickness = 2
+stroke.Parent = toggleBtn
 
-local sellBtn = Instance.new("TextButton")
-sellBtn.Name = "SellButton"
-sellBtn.Text = "SELL"
-sellBtn.Size = UDim2.new(0.3, 0, 0.8, 0)
-sellBtn.Position = UDim2.new(0.65, 0, 0.1, 0)
-sellBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-sellBtn.Visible = false
-sellBtn.Parent = actionFrame
+-- ==========================================
+-- C. 交互逻辑
+-- ==========================================
+local isOpen = false
 
-print("✅ UI 生成器运行完毕，所有组件已创建。")
+local function toggleInventory()
+	isOpen = not isOpen
+	mainFrame.Visible = isOpen
+
+	if isOpen then
+		mainFrame.Size = UDim2.new(0.4, 0, 0.3, 0)
+		TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+			Size = UDim2.new(0.5, 0, 0.4, 0)
+		}):Play()
+	end
+end
+
+closeBtn.MouseButton1Click:Connect(toggleInventory)
+toggleBtn.MouseButton1Click:Connect(toggleInventory)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.Tab then
+		toggleInventory()
+	end
+end)
+
+print("✅ InventoryUI_Generator (生成器) 已运行：按钮和窗口已创建")

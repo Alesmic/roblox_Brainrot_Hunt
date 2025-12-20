@@ -1,174 +1,179 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
-
-print("🔵 [HealthHUD] UI 脚本开始运行...")
 
 -- ==========================================
--- 1. 创建主 ScreenGui
+-- 1. UI 创建与布局 (极简贴底版)
 -- ==========================================
-local screenGui = playerGui:FindFirstChild("StatusHUD")
-if screenGui then screenGui:Destroy() end -- 防止重复，先删旧的
-
-screenGui = Instance.new("ScreenGui")
-screenGui.Name = "StatusHUD"
-screenGui.ResetOnSpawn = false -- 死亡不重置
-screenGui.DisplayOrder = -10
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CustomHUD_BottomLeft"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 10 -- 保证在最上层
 screenGui.Parent = playerGui
+screenGui.DisplayOrder = -10
 
--- ==========================================
--- 2. 辅助函数：创建进度条 (UI 工厂)
--- ==========================================
-local function createBar(name, position, color, defaultText)
-	-- 背景容器
-	local bgFrame = Instance.new("Frame")
-	bgFrame.Name = name .. "Background"
-	bgFrame.Size = UDim2.new(0, 300, 0, 22) --稍微变细一点
-	bgFrame.Position = position
-	bgFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20) -- 深黑背景
-	bgFrame.BorderSizePixel = 0
-	bgFrame.Parent = screenGui
+-- 主容器
+local container = Instance.new("Frame")
+container.Name = "StatsContainer"
+container.BackgroundTransparency = 1
+-- [核心修改] 锚点 (0, 1) 左下角，位置 (0, 1) 绝对贴底
+container.AnchorPoint = Vector2.new(0, 1) 
+container.Position = UDim2.new(0, 5, 1, -5) -- 留 5px 边距防止手机圆角裁切
+container.Size = UDim2.new(0.4, 0, 0.15, 0) -- 宽度 40%，高度自适应
+container.Parent = screenGui
 
-	-- 圆角
-	local uicorner = Instance.new("UICorner")
-	uicorner.CornerRadius = UDim.new(0, 6)
-	uicorner.Parent = bgFrame
-
-	-- 填充条
-	local fillFrame = Instance.new("Frame")
-	fillFrame.Name = "Fill"
-	fillFrame.Size = UDim2.new(0, 0, 1, 0) -- 初始 0
-	fillFrame.BackgroundColor3 = color
-	fillFrame.BorderSizePixel = 0
-	fillFrame.ZIndex = 2
-	fillFrame.Parent = bgFrame
-
-	local fillCorner = uicorner:Clone()
-	fillCorner.Parent = fillFrame
-
-	-- 文本标签
-	local textLabel = Instance.new("TextLabel")
-	textLabel.Name = "Text"
-	textLabel.Size = UDim2.new(1, 0, 1, 0)
-	textLabel.BackgroundTransparency = 1
-	textLabel.TextColor3 = Color3.new(1, 1, 1)
-	textLabel.Font = Enum.Font.GothamBold
-	textLabel.TextSize = 12
-	textLabel.TextStrokeTransparency = 0.5
-	textLabel.Text = defaultText or "Loading..."
-	textLabel.ZIndex = 3
-	textLabel.Parent = bgFrame
-
-	return bgFrame, fillFrame, textLabel
+-- 适配逻辑：如果是 PC，稍微缩短一点宽度
+if not UserInputService.TouchEnabled then
+	container.Size = UDim2.new(0.25, 0, 0.15, 0)
 end
 
 -- ==========================================
--- 3. 创建血条 (Health Bar)
--- ==========================================
--- [修改] 位置向上提：从 0.85 改为 0.82 (防止被底部遮挡)
-local healthPos = UDim2.new(0.5, -150, 0.82, 0) 
-local healthBg, healthFill, healthText = createBar("HealthBar", healthPos, Color3.fromRGB(231, 76, 60), "HP: -- / --") 
-
--- ==========================================
--- 4. 创建经验条 (Experience Bar)
--- ==========================================
--- [修改] 位置紧贴血条下方：Y轴偏移 26 像素
-local expPos = UDim2.new(0.5, -150, 0.82, 26) 
--- 浅蓝色
-local expBg, expFill, expText = createBar("ExpBar", expPos, Color3.fromRGB(52, 152, 219), "LV. 1 | 0 / 100") 
-
--- ==========================================
--- 5. 更新逻辑
+-- 2. 布局结构 (从下往上堆叠)
 -- ==========================================
 
--- A. 更新血量
+-- A. 经验条 (最底层，细长)
+local expBg = Instance.new("Frame")
+expBg.Name = "ExpBg"
+expBg.Size = UDim2.new(1, 0, 0.15, 0) -- 高度占比 15%
+expBg.Position = UDim2.new(0, 0, 0.85, 0) -- 贴底
+expBg.BackgroundColor3 = Color3.fromRGB(10, 10, 30)
+expBg.BorderSizePixel = 1
+expBg.BorderColor3 = Color3.fromRGB(0, 0, 0)
+expBg.Parent = container
+
+local expFill = Instance.new("Frame")
+expFill.Name = "Fill"
+expFill.Size = UDim2.new(0, 0, 1, 0)
+expFill.BackgroundColor3 = Color3.fromRGB(255, 215, 0) -- 金色
+expFill.BorderSizePixel = 0
+expFill.Parent = expBg
+
+-- B. 血条 (中间，较粗)
+local healthBg = Instance.new("Frame")
+healthBg.Name = "HealthBg"
+healthBg.Size = UDim2.new(1, 0, 0.35, 0) -- 高度占比 35%
+healthBg.Position = UDim2.new(0, 0, 0.45, 0) -- 位于经验条上方 (留 5% 间隙)
+healthBg.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+healthBg.BorderSizePixel = 1
+healthBg.BorderColor3 = Color3.fromRGB(0, 0, 0)
+healthBg.Parent = container
+
+local healthFill = Instance.new("Frame")
+healthFill.Name = "Fill"
+healthFill.Size = UDim2.new(1, 0, 1, 0)
+healthFill.BackgroundColor3 = Color3.fromRGB(220, 50, 50) -- 鲜红
+healthFill.BorderSizePixel = 0
+healthFill.Parent = healthBg
+
+local healthTextLabel = Instance.new("TextLabel")
+healthTextLabel.Size = UDim2.new(1, -10, 1, 0)
+healthTextLabel.Position = UDim2.new(0, 5, 0, 0)
+healthTextLabel.BackgroundTransparency = 1
+healthTextLabel.Font = Enum.Font.FredokaOne
+healthTextLabel.TextSize = 14 -- 固定字号，防止缩放过小
+healthTextLabel.TextColor3 = Color3.new(1, 1, 1)
+healthTextLabel.TextStrokeTransparency = 0.5
+healthTextLabel.TextXAlignment = Enum.TextXAlignment.Left
+healthTextLabel.Text = "HP 100/100"
+healthTextLabel.Parent = healthBg
+
+-- C. 金币与等级 (最上方)
+local topInfoFrame = Instance.new("Frame")
+topInfoFrame.Name = "TopInfo"
+topInfoFrame.Size = UDim2.new(1, 0, 0.35, 0)
+topInfoFrame.Position = UDim2.new(0, 0, 0.05, 0) -- 位于血条上方
+topInfoFrame.BackgroundTransparency = 1
+topInfoFrame.Parent = container
+
+-- 等级 (左)
+local levelText = Instance.new("TextLabel")
+levelText.Size = UDim2.new(0.3, 0, 1, 0)
+levelText.Position = UDim2.new(0, 0, 0, 0)
+levelText.BackgroundTransparency = 1
+levelText.Font = Enum.Font.FredokaOne
+levelText.TextScaled = true
+levelText.TextColor3 = Color3.fromRGB(255, 255, 255)
+levelText.TextXAlignment = Enum.TextXAlignment.Left
+levelText.Text = "Lv.1"
+levelText.Parent = topInfoFrame
+
+-- 金币 (紧挨等级)
+local goldIcon = Instance.new("ImageLabel")
+goldIcon.Size = UDim2.new(0.8, 0, 0.8, 0)
+goldIcon.SizeConstraint = Enum.SizeConstraint.RelativeYY
+goldIcon.Position = UDim2.new(0.3, 0, 0.1, 0)
+goldIcon.BackgroundTransparency = 1
+goldIcon.Image = "rbxasset://textures/ui/common/robux_small.png" -- 这里换成你的金币图
+goldIcon.Parent = topInfoFrame
+
+local goldText = Instance.new("TextLabel")
+goldText.Size = UDim2.new(0.5, 0, 1, 0)
+goldText.Position = UDim2.new(0.32, 25, 0, 0) -- 图标宽度偏移
+goldText.BackgroundTransparency = 1
+goldText.Font = Enum.Font.FredokaOne
+goldText.TextScaled = true
+goldText.TextColor3 = Color3.fromRGB(255, 215, 0)
+goldText.TextXAlignment = Enum.TextXAlignment.Left
+goldText.Text = "0"
+goldText.Parent = topInfoFrame
+
+
+-- ==========================================
+-- 3. 数据绑定逻辑 (保持不变)
+-- ==========================================
 local function updateHealth()
 	local char = player.Character
-	local humanoid = char and char:FindFirstChild("Humanoid")
+	if not char then return end
+	local hum = char:FindFirstChild("Humanoid")
+	if not hum then return end
 
-	if humanoid then
-		local hp = math.max(0, math.floor(humanoid.Health))
-		local maxHp = math.floor(humanoid.MaxHealth)
+	local hp = math.clamp(hum.Health, 0, hum.MaxHealth)
+	local maxHp = hum.MaxHealth
 
-		TweenService:Create(healthFill, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-			Size = UDim2.new(hp / maxHp, 0, 1, 0)
-		}):Play()
-
-		healthText.Text = "HP: " .. hp .. " / " .. maxHp
-	end
+	TweenService:Create(healthFill, TweenInfo.new(0.3), {Size = UDim2.new(hp/maxHp, 0, 1, 0)}):Play()
+	healthTextLabel.Text = string.format("%d / %d", math.floor(hp), math.floor(maxHp))
 end
 
--- B. 更新经验值
-local function updateExp()
+local function updateStats()
 	local leaderstats = player:FindFirstChild("leaderstats")
 	if not leaderstats then return end
 
-	local levelVal = leaderstats:FindFirstChild("Level")
-	local expVal = leaderstats:FindFirstChild("Experience") -- 确认这里是 Experience
+	local lvl = leaderstats:FindFirstChild("Level")
+	local xp = leaderstats:FindFirstChild("Experience")
+	local g = leaderstats:FindFirstChild("Gold")
+	local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
-	if levelVal and expVal then
-		local currentLevel = levelVal.Value
-		local currentExp = expVal.Value
-
-		-- 获取升级所需经验
-		local requiredExp = GameConfig.Leveling.GetXpRequired(currentLevel)
-		if requiredExp <= 0 then requiredExp = 1 end
-
-		local progress = math.clamp(currentExp / requiredExp, 0, 1)
-
-		TweenService:Create(expFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
-			Size = UDim2.new(progress, 0, 1, 0)
-		}):Play()
-
-		expText.Text = "LV. " .. currentLevel .. " | " .. currentExp .. " / " .. requiredExp
+	if lvl and xp then
+		levelText.Text = "Lv." .. lvl.Value
+		local req = GameConfig.Leveling.GetXpRequired(lvl.Value)
+		local pct = math.clamp(xp.Value / req, 0, 1)
+		TweenService:Create(expFill, TweenInfo.new(0.5), {Size = UDim2.new(pct, 0, 1, 0)}):Play()
+	end
+	if g then
+		goldText.Text = tostring(g.Value)
 	end
 end
 
--- ==========================================
--- 6. 事件监听
--- ==========================================
+-- 监听
+local function setupChar(char)
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum then hum.HealthChanged:Connect(updateHealth); updateHealth() end
+end
+if player.Character then setupChar(player.Character) end
+player.CharacterAdded:Connect(setupChar)
 
-player.CharacterAdded:Connect(function(char)
-	local humanoid = char:WaitForChild("Humanoid", 10)
-	if humanoid then
-		humanoid.HealthChanged:Connect(updateHealth)
-		humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(updateHealth)
-		updateHealth()
-	end
-end)
-
--- 初始角色检查
-if player.Character then
-	local hum = player.Character:FindFirstChild("Humanoid")
-	if hum then
-		hum.HealthChanged:Connect(updateHealth)
-		updateHealth()
+local function setupStats()
+	local ls = player:WaitForChild("leaderstats", 10)
+	if ls then
+		ls:WaitForChild("Level").Changed:Connect(updateStats)
+		ls:WaitForChild("Experience").Changed:Connect(updateStats)
+		ls:WaitForChild("Gold").Changed:Connect(updateStats)
+		updateStats()
 	end
 end
-
--- 启动数据监听 (使用循环重试，确保能连上)
-task.spawn(function()
-	print("🔵 [HealthHUD] 等待 leaderstats 数据...")
-
-	-- 无限等待直到加载出来，防止超时失效
-	local leaderstats = player:WaitForChild("leaderstats", 9999) 
-	print("🔵 [HealthHUD] 找到 leaderstats!")
-
-	local levelStat = leaderstats:WaitForChild("Level", 9999)
-	local expStat = leaderstats:WaitForChild("Experience", 10) 
-
-	if not expStat then
-		warn("❌ [HealthHUD] 没有找到 'Experience' 属性！请检查 PlayerManager 脚本！")
-		-- 尝试用 Instance.new 创建一个临时的防止报错 (仅客户端)
-		return
-	end
-
-	print("🔵 [HealthHUD] 数据连接成功，更新 UI")
-	levelStat.Changed:Connect(updateExp)
-	expStat.Changed:Connect(updateExp)
-	updateExp()
-end)
+setupStats()
+task.delay(1, setupStats)

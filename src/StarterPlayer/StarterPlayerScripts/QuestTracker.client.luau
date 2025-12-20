@@ -1,195 +1,203 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
 -- ==========================================
--- 1. 创建 UI (侧边栏 + 胜利大字)
+-- 1. UI 创建
 -- ==========================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "QuestTrackerUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
+screenGui.DisplayOrder = -10
 
--- A. 侧边栏 (任务追踪 - 保持原有风格但优化)
-local trackerFrame = Instance.new("Frame")
-trackerFrame.Name = "TrackerFrame"
-trackerFrame.Size = UDim2.new(0, 220, 0, 100)
-trackerFrame.Position = UDim2.new(1, -240, 0.4, 0) -- 屏幕右侧
-trackerFrame.BackgroundTransparency = 0.5
-trackerFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-trackerFrame.BorderSizePixel = 0
-trackerFrame.Parent = screenGui
--- 给侧边栏加个圆角
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 8)
-uiCorner.Parent = trackerFrame
+-- A. 任务折叠/展开按钮 (圆形)
+local toggleBtn = Instance.new("ImageButton")
+toggleBtn.Name = "QuestToggle"
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+-- 位置：贴左边 (X=0)，背包按钮(0.4)的下方 (Y=0.55)
+toggleBtn.Position = UDim2.new(0, 10, 0.55, 0)
+toggleBtn.AnchorPoint = Vector2.new(0, 0.5)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleBtn.BackgroundTransparency = 0.4
+-- 任务图标 (卷轴/感叹号)
+toggleBtn.Image = "rbxassetid://84218746173192" 
+toggleBtn.Parent = screenGui
 
-local trackerTitle = Instance.new("TextLabel")
-trackerTitle.Size = UDim2.new(1, -10, 0, 25)
-trackerTitle.Position = UDim2.new(0, 10, 0, 5)
-trackerTitle.BackgroundTransparency = 1
-trackerTitle.Text = "Current Quest"
-trackerTitle.TextColor3 = Color3.new(1, 1, 1)
-trackerTitle.Font = Enum.Font.GothamBold
-trackerTitle.TextSize = 16
-trackerTitle.TextXAlignment = Enum.TextXAlignment.Left
-trackerTitle.Parent = trackerFrame
+-- 变成圆形
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(1, 0)
+btnCorner.Parent = toggleBtn
 
-local questLabel = Instance.new("TextLabel")
-questLabel.Name = "QuestText"
-questLabel.Size = UDim2.new(1, -20, 1, -35)
-questLabel.Position = UDim2.new(0, 10, 0, 30)
-questLabel.BackgroundTransparency = 1
-questLabel.Text = "Loading..."
-questLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-questLabel.Font = Enum.Font.Gotham
-questLabel.TextSize = 14
-questLabel.TextWrapped = true
-questLabel.TextXAlignment = Enum.TextXAlignment.Left
-questLabel.TextYAlignment = Enum.TextYAlignment.Top
-questLabel.Parent = trackerFrame
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 215, 0)
+stroke.Thickness = 2
+stroke.Parent = toggleBtn
 
--- B. [新增] 胜利大字 UI (仿照 Boss 胜利)
-local victoryLabel = Instance.new("TextLabel")
-victoryLabel.Name = "QuestVictoryLabel"
-victoryLabel.Size = UDim2.new(1, 0, 0.2, 0)
-victoryLabel.Position = UDim2.new(0, 0, 0.3, 0) -- 屏幕中央偏上
-victoryLabel.BackgroundTransparency = 1
-victoryLabel.Text = "QUEST COMPLETED!"
-victoryLabel.TextColor3 = Color3.fromRGB(255, 215, 0) -- 金色
-victoryLabel.Font = Enum.Font.FredokaOne -- 卡通粗体，很醒目
-victoryLabel.TextSize = 60
-victoryLabel.TextStrokeTransparency = 0 -- 黑色描边
-victoryLabel.TextStrokeColor3 = Color3.new(0,0,0)
-victoryLabel.Visible = false -- 默认隐藏
-victoryLabel.ZIndex = 10 -- 保证在最上层
-victoryLabel.Parent = screenGui
+-- 状态图标 (用来显示 ! 或 <)
+local statusIcon = Instance.new("TextLabel")
+statusIcon.Size = UDim2.new(0.5, 0, 0.5, 0)
+statusIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+statusIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+statusIcon.BackgroundTransparency = 1
+statusIcon.Text = "!" 
+statusIcon.TextColor3 = Color3.fromRGB(255, 215, 0)
+statusIcon.Font = Enum.Font.FredokaOne
+statusIcon.TextSize = 32
+statusIcon.Parent = toggleBtn
 
--- ==========================================
--- 2. 逻辑处理
--- ==========================================
-local completedQuestsCache = {} -- 缓存表：记录哪些任务已经弹过窗了
 
--- 显示大字动画函数
-local function showVictoryAnimation(text)
-	victoryLabel.Text = text
-	victoryLabel.Visible = true
-	victoryLabel.TextTransparency = 0
-	victoryLabel.TextStrokeTransparency = 0
-	victoryLabel.Position = UDim2.new(0, 0, 0.4, 0) -- 起始位置 (稍低一点)
+-- B. 任务详情窗口 (默认隐藏)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 220, 0, 130)
+-- 位于按钮右侧 (X偏移 80px), 垂直对齐按钮
+mainFrame.Position = UDim2.new(0, 80, 0.55, 0) 
+mainFrame.AnchorPoint = Vector2.new(0, 0.5)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+mainFrame.BackgroundTransparency = 0.2
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
 
-	-- 1. 向上浮动 + 弹性进入
-	local tweenIn = TweenService:Create(victoryLabel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Position = UDim2.new(0, 0, 0.3, 0)
-	})
-	tweenIn:Play()
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
 
-	-- 播放个简单的音效 (通用提示音)
-	local sound = Instance.new("Sound", workspace)
-	sound.SoundId = "rbxassetid://12221967" -- 欢呼/提示音效
-	sound.Volume = 1
-	sound:Play()
-	task.delay(2, function() sound:Destroy() end)
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, -10, 0, 25)
+titleLabel.Position = UDim2.new(0, 10, 0, 10)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "CURRENT QUEST"
+titleLabel.Font = Enum.Font.FredokaOne
+titleLabel.TextSize = 16
+titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = mainFrame
 
-	-- 2. 停留 3 秒后 -> 淡出 + 继续上浮
-	task.delay(3, function()
-		local tweenOut = TweenService:Create(victoryLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			TextTransparency = 1,
-			TextStrokeTransparency = 1,
-			Position = UDim2.new(0, 0, 0.2, 0) 
-		})
-		tweenOut:Play()
+local taskNameLabel = Instance.new("TextLabel")
+taskNameLabel.Name = "TaskName"
+taskNameLabel.Size = UDim2.new(1, -20, 0, 25)
+taskNameLabel.Position = UDim2.new(0, 10, 0, 35)
+taskNameLabel.BackgroundTransparency = 1
+taskNameLabel.Text = "No Active Quest"
+taskNameLabel.Font = Enum.Font.SourceSansBold
+taskNameLabel.TextSize = 18
+taskNameLabel.TextColor3 = Color3.new(1, 1, 1)
+taskNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+taskNameLabel.TextWrapped = true
+taskNameLabel.Parent = mainFrame
 
-		tweenOut.Completed:Connect(function()
-			victoryLabel.Visible = false
-		end)
-	end)
-end
-
--- 更新任务追踪器
-local function updateQuestTracker()
-	local hiddenStats = player:FindFirstChild("HiddenStats")
-	if not hiddenStats then 
-		questLabel.Text = "No data..."
-		return 
-	end
-
-	local activeQuestText = "No active quests."
-	local hasActive = false
-
-	-- 遍历配置中的所有任务
-	if GameConfig.Quests then
-		for questID, questData in pairs(GameConfig.Quests) do
-			local questStatName = "Quest_" .. questID
-			local statValue = hiddenStats:FindFirstChild(questStatName)
-
-			-- 如果玩家有这个任务的进度数据
-			if statValue then
-				local current = statValue.Value
-				local target = questData.TargetCount
-
-				-- 检查是否完成
-				if current >= target then
-					-- [关键] 如果是第一次检测到完成，就弹窗
-					if not completedQuestsCache[questID] then
-						completedQuestsCache[questID] = true
-						print("🎉 Quest Completed: " .. questID)
-						showVictoryAnimation("QUEST COMPLETED!")
-					end
-				else
-					-- 如果还没完成，并且还没显示其他任务，就显示在这个侧边栏
-					-- (如果你想显示所有任务，可以拼接字符串)
-					if not hasActive then
-						-- 只有没完成的任务才显示在侧边栏
-						activeQuestText = string.format("%s\n\n🎯 Progress: %d / %d\n💰 Reward: %d Gold", 
-							questData.Name or "Unknown Quest", 
-							current, 
-							target,
-							questData.GoldReward or 0
-						)
-						hasActive = true
-						-- 这里不return，继续循环，以免漏掉其他任务的完成检测
-					end
-					-- 标记这个任务未完成，防止以后重复弹窗逻辑出错
-					completedQuestsCache[questID] = false 
-				end
-			end
-		end
-	end
-
-	questLabel.Text = activeQuestText
-end
+local progressLabel = Instance.new("TextLabel")
+progressLabel.Name = "Progress"
+progressLabel.Size = UDim2.new(1, -20, 0, 25)
+progressLabel.Position = UDim2.new(0, 10, 0, 80)
+progressLabel.BackgroundTransparency = 1
+progressLabel.Text = "- / -"
+progressLabel.Font = Enum.Font.SourceSans
+progressLabel.TextSize = 16
+progressLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+progressLabel.TextXAlignment = Enum.TextXAlignment.Left
+progressLabel.Parent = mainFrame
 
 -- ==========================================
--- 3. 启动监听
+-- 2. 交互逻辑
 -- ==========================================
-task.spawn(function()
-	local hiddenStats = player:WaitForChild("HiddenStats", 10)
-	if hiddenStats then
-		print("✅ [QuestTracker] Connected to HiddenStats")
+local isExpanded = false
 
-		-- 监听新任务添加
-		hiddenStats.ChildAdded:Connect(function(child)
-			if child:IsA("IntValue") then
-				child.Changed:Connect(updateQuestTracker)
-				updateQuestTracker()
-			end
-		end)
+toggleBtn.MouseButton1Click:Connect(function()
+	isExpanded = not isExpanded
 
-		-- 监听现有任务变化
-		for _, child in pairs(hiddenStats:GetChildren()) do
-			if child:IsA("IntValue") then
-				child.Changed:Connect(updateQuestTracker)
-			end
-		end
+	if isExpanded then
+		-- 展开
+		mainFrame.Visible = true
+		mainFrame.Size = UDim2.new(0, 0, 0, 130)
+		mainFrame.BackgroundTransparency = 1
 
-		-- 初始刷新
-		updateQuestTracker()
+		TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.new(0, 220, 0, 130),
+			BackgroundTransparency = 0.2
+		}):Play()
+		statusIcon.Text = "<" 
 	else
-		warn("❌ [QuestTracker] Could not find HiddenStats")
+		-- 折叠
+		local tween = TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Size = UDim2.new(0, 0, 0, 130),
+			BackgroundTransparency = 1
+		})
+		tween:Play()
+		tween.Completed:Connect(function()
+			if not isExpanded then mainFrame.Visible = false end
+		end)
+		statusIcon.Text = "!" 
 	end
 end)
+
+-- ==========================================
+-- 3. 数据监听
+-- ==========================================
+local function updateQuestDisplay()
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	if not hiddenStats then return end
+
+	local currentQuestId = nil
+	local currentProgress = 0
+
+	for _, child in pairs(hiddenStats:GetChildren()) do
+		if string.sub(child.Name, 1, 6) == "Quest_" then
+			currentQuestId = child.Name
+			currentProgress = child.Value
+			break
+		end
+	end
+
+	if currentQuestId then
+		local questInfo = GameConfig.Quests and GameConfig.Quests[currentQuestId]
+
+		if questInfo then
+			taskNameLabel.Text = questInfo.Title or currentQuestId
+			progressLabel.Text = string.format("Progress: %d / %d", currentProgress, questInfo.TargetAmount or 10)
+
+			if currentProgress >= (questInfo.TargetAmount or 10) then
+				progressLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+				progressLabel.Text = "COMPLETED!"
+				stroke.Color = Color3.fromRGB(0, 255, 0) -- 边框变绿
+				if not isExpanded then
+					-- 简单的跳动提醒
+					toggleBtn.Size = UDim2.new(0, 70, 0, 70)
+					TweenService:Create(toggleBtn, TweenInfo.new(0.5, Enum.EasingStyle.Bounce), {Size = UDim2.new(0, 60, 0, 60)}):Play()
+				end
+			else
+				progressLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+				stroke.Color = Color3.fromRGB(255, 215, 0) -- 边框金色
+			end
+			toggleBtn.Visible = true
+		else
+			taskNameLabel.Text = "Unknown Quest"
+		end
+	else
+		taskNameLabel.Text = "No Active Quest"
+		progressLabel.Text = ""
+		stroke.Color = Color3.fromRGB(150, 150, 150)
+		-- 无任务时，如果不想显示按钮，可以设为 false
+		-- toggleBtn.Visible = false 
+	end
+end
+
+local function setupHiddenStats()
+	local hs = player:WaitForChild("HiddenStats", 10)
+	if hs then
+		hs.ChildAdded:Connect(updateQuestDisplay)
+		hs.ChildRemoved:Connect(updateQuestDisplay)
+		for _, c in pairs(hs:GetChildren()) do
+			c.Changed:Connect(updateQuestDisplay)
+		end
+		updateQuestDisplay()
+	end
+end
+setupHiddenStats()

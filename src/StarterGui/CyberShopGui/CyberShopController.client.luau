@@ -9,10 +9,14 @@ local gui = script.Parent
 -- 资源引用
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local RemoteEventFolder = ReplicatedStorage:WaitForChild("RemoteEvent")
+local RemoteFunctionFolder = ReplicatedStorage:WaitForChild("RemoteFunction") -- [新增] 获取函数文件夹
+
 local toggleEvent = RemoteEventFolder:WaitForChild("ToggleWindow")
-local buyEvent = RemoteEventFolder:WaitForChild("BuyItem")
 local sellEvent = RemoteEventFolder:WaitForChild("SellItem")
-local getInvFunc = ReplicatedStorage:WaitForChild("RemoteFunction"):WaitForChild("GetInventoryData")
+
+-- [修复 1] 购买现在是 RemoteFunction，不是 RemoteEvent
+local buyFunc = RemoteFunctionFolder:WaitForChild("BuyItem") 
+local getInvFunc = RemoteFunctionFolder:WaitForChild("GetInventoryData")
 
 -- 状态变量
 local isOpen = false
@@ -241,22 +245,37 @@ local function createItemCard(parent, itemData, isSelling)
 			if isSelling then
 				if itemData.RealName then
 					sellEvent:FireServer(itemData.RealName, math.floor((itemData.Price or 0) * 0.5), 1)
+					-- 卖出后延迟刷新
+					task.wait(0.2)
+					if _G.RefreshShopUI then _G.RefreshShopUI() end
 				end
 			else
 				if itemData.ProductId then
 					MarketplaceService:PromptProductPurchase(player, itemData.ProductId)
 				elseif itemData.RealName then
-					buyEvent:FireServer(itemData.RealName)
+					-- [修复 2] 使用 InvokeServer 调用购买函数
+					local success = buyFunc:InvokeServer(itemData.RealName)
+
+					if success then
+						print("✅ 购买成功: " .. itemData.RealName)
+						-- 购买成功后立即刷新，显示已购买状态/更新金币
+						if _G.RefreshShopUI then _G.RefreshShopUI() end
+					else
+						warn("❌ 购买失败: 金币不足或已拥有该物品")
+						-- 这里可以添加一个红色的报错提示动画
+						btn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+						task.wait(0.2)
+						btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+						return -- 失败不播放点击成功动画
+					end
 				end
 			end
 
-			-- 点击反馈动画
+			-- 点击反馈动画 (只有成功才播放深灰闪烁)
 			btn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 			task.wait(0.1)
 			btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 
-			task.wait(0.2)
-			if _G.RefreshShopUI then _G.RefreshShopUI() end
 		else
 			lastClick = now
 		end

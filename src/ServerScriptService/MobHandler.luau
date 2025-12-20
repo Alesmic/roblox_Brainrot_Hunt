@@ -33,16 +33,43 @@ end
 -- Helper Function: Give Item (Keep your loot logic)
 -- ==========================================
 local function giveItemToPlayer(player, itemName)
+	-- [新增] 1. 获取物品配置，检查是否为武器
+	local itemConfig = GameConfig.Weapons[itemName] or GameConfig.Items[itemName]
+
+	-- 如果是武器，且玩家已经拥有（检查背包、StarterGear 或 Inventory 数据），则直接停止
+	if itemConfig and itemConfig.Category == "Weapons" then
+		-- 检查背包或初始装备中是否已存在
+		if player.Backpack:FindFirstChild(itemName) or player.StarterGear:FindFirstChild(itemName) then
+			print("⚠️ [MobHandler] 玩家已有武器: " .. itemName .. "，跳过掉落。")
+			return false
+		end
+
+		-- 检查 Inventory 数据是否已记录
+		local inv = player:FindFirstChild("Inventory")
+		if inv and inv:FindFirstChild(itemName) and inv[itemName].Value >= 1 then
+			return false
+		end
+	end
+
+	-- 下面是原有的获取逻辑
 	local tool = ServerStorage:FindFirstChild("Tools") and ServerStorage.Tools:FindFirstChild(itemName)
 	if not tool then
 		tool = ServerStorage:FindFirstChild("Items") and ServerStorage.Items:FindFirstChild(itemName)
 	end
 
 	if tool then
-		local clone = tool:Clone()
-		clone.Parent = player.Backpack
+		-- [优化] 再次确保背包里没有才给（防止并发）
+		if not player.Backpack:FindFirstChild(itemName) then
+			local clone = tool:Clone()
+			clone.Parent = player.Backpack
+		end
 
-		-- Write to inventory data
+		-- [新增] 同时给到 StarterGear，防止死后丢失（如果不希望掉落物死后保留，可去掉这行）
+		if not player.StarterGear:FindFirstChild(itemName) then
+			tool:Clone().Parent = player.StarterGear
+		end
+
+		-- 更新 Inventory 数据
 		local inventory = player:FindFirstChild("Inventory")
 		if inventory then
 			local itemVal = inventory:FindFirstChild(itemName)
@@ -52,7 +79,12 @@ local function giveItemToPlayer(player, itemName)
 				itemVal.Value = 0
 				itemVal.Parent = inventory
 			end
-			itemVal.Value = itemVal.Value + 1
+			-- 如果是武器，锁定数量为 1；如果是消耗品，则增加
+			if itemConfig and itemConfig.Category == "Weapons" then
+				itemVal.Value = 1
+			else
+				itemVal.Value = itemVal.Value + 1
+			end
 		end
 		return true
 	else

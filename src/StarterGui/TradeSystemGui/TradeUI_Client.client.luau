@@ -1,466 +1,413 @@
--- TradeUI_Client (Client Script)
--- Placement: StarterGui/TradeSystemGui/TradeUI_Client
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPack = game:GetService("StarterPack")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local gui = script.Parent -- TradeSystemGui
 
--- [Added] Import GameConfig to read image configurations
+-- ==========================================
+-- 1. 资源引用
+-- ==========================================
+local RemoteEventFolder = ReplicatedStorage:WaitForChild("RemoteEvent")
+
+-- 引用交易事件
+local tradeEvent = RemoteEventFolder:FindFirstChild("TradeEvent") or RemoteEventFolder:FindFirstChild("TradeAction")
+if not tradeEvent then
+	-- 临时创建一个空引用防止报错，等待服务器创建
+	tradeEvent = Instance.new("RemoteEvent") 
+	warn("⚠️ [TradeUI] 尚未找到 TradeEvent (等待服务器创建)")
+end
+
+-- 引用 BossBattleEvent
+local bossEvent = RemoteEventFolder:FindFirstChild("BossBattleEvent")
+
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
--- ==========================================
--- 1. Safe Retrieval of RemoteEvents
--- ==========================================
-local RemoteEventFolder = ReplicatedStorage:WaitForChild("RemoteEvent", 10)
-if not RemoteEventFolder then
-	warn("⚠️ [TradeUI] Critical Error: RemoteEvent folder not found!")
-	return
-end
+-- 状态
+local myOffer = {}
+local isLocked = false
+local isTradingActive = false 
+local activePromptSource = nil -- "Trade" 或 "Wall"
 
-local StartTradeEvent = RemoteEventFolder:WaitForChild("StartTradeUI", 10)
-local HandleTradeActionEvent = RemoteEventFolder:WaitForChild("HandleTradeAction", 10)
-local UpdateTradeUIEvent = RemoteEventFolder:WaitForChild("UpdateTradeUI", 10)
+-- UI 变量
+local mainFrame
+local inventoryScroll
+local offerScroll
+local confirmBtn
+local statusLabel
+local waitingOverlay
+local promptFrame
 
-if not (StartTradeEvent and HandleTradeActionEvent and UpdateTradeUIEvent) then
-	warn("⚠️ [TradeUI] Missing some RemoteEvents, trade functionality may fail!")
-end
-
--- ==========================================
--- 2. Variables and Configuration
--- ==========================================
-local currentOffer = {} 
-local isTradeActive = false
-local myLockStatus = false
-local theirLockStatus = false
-local isCountdownActive = false
-
--- [Core Fix] Prioritize reading images from GameConfig
-local function getItemIcon(itemName)
-	-- 1. Priority: Check configuration table (GameConfig) - Most accurate, universal for all players
-	-- Check Weapons, Items, Skin tables in sequence
-	local categoryList = {GameConfig.Weapons, GameConfig.Items, GameConfig.Skin}
-
-	for _, category in pairs(categoryList) do
-		if category and category[itemName] and category[itemName].ImageId then
-			return category[itemName].ImageId
-		end
-	end
-
-	-- 2. If not filled in configuration table, try to find Tool object from public areas
-	local locations = {ReplicatedStorage, StarterPack, player.Backpack, player.Character}
-	for _, loc in pairs(locations) do
-		local tool = loc:FindFirstChild(itemName, true)
-		if tool and tool:IsA("Tool") then
-			return tool.TextureId
-		end
-	end
-
-	-- 3. If really not found, return default question mark
-	return "rbxassetid://13466488344" 
-end
+-- 预声明函数
+local updateUI -- 提前声明，以便在 createResponsiveUI 里调用
 
 -- ==========================================
--- 3. UI Generation (Unchanged)
+-- 2. 响应式 UI 生成器
 -- ==========================================
-local screenGui = script.Parent
-screenGui.Name = "TradeSystemGui"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true 
-screenGui.DisplayOrder = 100 
+local function createResponsiveUI()
+	if gui:FindFirstChild("MainFrame") then gui.MainFrame:Destroy() end
+	if gui:FindFirstChild("PromptFrame") then gui.PromptFrame:Destroy() end
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-mainFrame.Position = UDim2.fromScale(0.5, 0.5)
-mainFrame.Size = UDim2.fromScale(0.6, 0.65)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-mainFrame.BorderSizePixel = 0
-mainFrame.Visible = false
-mainFrame.Parent = screenGui
-
-local sizeConstraint = Instance.new("UISizeConstraint")
-sizeConstraint.MinSize = Vector2.new(350, 300)
-sizeConstraint.MaxSize = Vector2.new(700, 500)
-sizeConstraint.Parent = mainFrame
-
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 12)
-uiCorner.Parent = mainFrame
-
--- Title
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.1, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Trade Center (TRADE)"
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 18
-titleLabel.Parent = mainFrame
-
--- Close Button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0.08, 0, 0.1, 0)
-closeBtn.Position = UDim2.new(0.92, 0, 0, 0)
-closeBtn.BackgroundTransparency = 1
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
-closeBtn.Font = Enum.Font.FredokaOne
-closeBtn.TextSize = 20
-closeBtn.Parent = mainFrame
-
--- Container
-local contentFrame = Instance.new("Frame")
-contentFrame.Size = UDim2.new(0.96, 0, 0.7, 0)
-contentFrame.Position = UDim2.new(0.02, 0, 0.12, 0)
-contentFrame.BackgroundTransparency = 1
-contentFrame.Parent = mainFrame
-
--- Left Panel (Me)
-local myPanelFrame = Instance.new("Frame")
-myPanelFrame.Size = UDim2.new(0.49, 0, 1, 0)
-myPanelFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-myPanelFrame.Parent = contentFrame
-Instance.new("UICorner", myPanelFrame).CornerRadius = UDim.new(0, 8)
-
-local myHeader = Instance.new("TextLabel")
-myHeader.Size = UDim2.new(1, 0, 0.1, 0)
-myHeader.BackgroundTransparency = 1
-myHeader.Text = "Your Items"
-myHeader.TextColor3 = Color3.fromRGB(200, 200, 200)
-myHeader.Font = Enum.Font.GothamBold
-myHeader.Parent = myPanelFrame
-
-local myScroll = Instance.new("ScrollingFrame")
-myScroll.Size = UDim2.new(1, 0, 0.9, 0)
-myScroll.Position = UDim2.new(0, 0, 0.1, 0)
-myScroll.BackgroundTransparency = 1
-myScroll.ScrollBarThickness = 4
-myScroll.Parent = myPanelFrame
-
--- Right Panel (Partner)
-local theirPanelFrame = myPanelFrame:Clone()
-theirPanelFrame.Position = UDim2.new(0.51, 0, 0, 0)
-theirPanelFrame.Parent = contentFrame
-local theirHeader = theirPanelFrame:FindFirstChild("TextLabel")
-theirHeader.Text = "Partner's Items"
-local theirScroll = theirPanelFrame:FindFirstChild("ScrollingFrame")
-
--- Layout
-local listLayout = Instance.new("UIListLayout")
-listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-listLayout.Padding = UDim.new(0, 5)
-listLayout.Parent = myScroll
-listLayout:Clone().Parent = theirScroll
-
--- Bottom Action Area
-local actionFrame = Instance.new("Frame")
-actionFrame.Size = UDim2.new(1, 0, 0.15, 0)
-actionFrame.Position = UDim2.new(0, 0, 0.85, 0)
-actionFrame.BackgroundTransparency = 1
-actionFrame.Parent = mainFrame
-
--- Main Button
-local mainActionBtn = Instance.new("TextButton")
-mainActionBtn.Name = "ActionButton"
-mainActionBtn.Size = UDim2.new(0.5, 0, 0.7, 0)
-mainActionBtn.AnchorPoint = Vector2.new(0.5, 0.5)
-mainActionBtn.Position = UDim2.new(0.5, 0, 0.5, 0)
-mainActionBtn.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
-mainActionBtn.Text = "Lock Trade (LOCK)"
-mainActionBtn.TextColor3 = Color3.new(1, 1, 1)
-mainActionBtn.Font = Enum.Font.GothamBold
-mainActionBtn.TextSize = 16
-mainActionBtn.AutoButtonColor = true
-mainActionBtn.Parent = actionFrame
-Instance.new("UICorner", mainActionBtn).CornerRadius = UDim.new(0, 8)
-
--- Status Text
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0.3, 0)
-statusLabel.Position = UDim2.new(0, 0, -0.4, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Trade in progress..."
-statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 14
-statusLabel.Parent = actionFrame
-
--- ==========================================
--- 4. Helper Function: Create Item Entry
--- ==========================================
-local function createItemEntry(parent, name, amount, isInteractable)
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0.95, 0, 0, 50) 
-	frame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-	frame.Parent = parent
-	Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-
-	-- Image Display
-	local icon = Instance.new("ImageLabel")
-	icon.Size = UDim2.new(0, 40, 0, 40)
-	icon.Position = UDim2.new(0, 5, 0.5, -20)
-	icon.BackgroundTransparency = 1
-	icon.Image = getItemIcon(name) -- Automatically retrieve from GameConfig
-	icon.ScaleType = Enum.ScaleType.Fit
-	icon.Parent = frame
-
-	-- Item Name
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
-	nameLabel.Position = UDim2.new(0, 55, 0.1, 0)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = name
-	nameLabel.TextColor3 = Color3.new(1, 1, 1)
-	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 14
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	nameLabel.Parent = frame
-
-	-- Quantity
-	local amtLabel = Instance.new("TextLabel")
-	amtLabel.Size = UDim2.new(0.6, 0, 0.4, 0)
-	amtLabel.Position = UDim2.new(0, 55, 0.6, 0)
-	amtLabel.BackgroundTransparency = 1
-	amtLabel.Text = "x" .. amount
-	amtLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-	amtLabel.TextXAlignment = Enum.TextXAlignment.Left
-	amtLabel.Font = Enum.Font.Gotham
-	amtLabel.TextSize = 12
-	amtLabel.Parent = frame
-
-	-- Interaction Logic
-	if isInteractable then
-		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(1, 0, 1, 0)
-		btn.BackgroundTransparency = 1
-		btn.Text = ""
-		btn.Parent = frame
-
-		btn.MouseButton1Click:Connect(function()
-			if myLockStatus then return end 
-			if not currentOffer[name] then currentOffer[name] = 0 end
-
-			local invItem = player.Inventory:FindFirstChild(name)
-			local maxQty = invItem and invItem.Value or 0
-
-			if currentOffer[name] < maxQty then
-				currentOffer[name] = currentOffer[name] + 1
-				if HandleTradeActionEvent then
-					HandleTradeActionEvent:FireServer("UpdateItems", currentOffer)
-				end
-				refreshMyView()
-			end
-		end)
-
-		btn.MouseButton2Click:Connect(function()
-			if myLockStatus then return end
-			if currentOffer[name] and currentOffer[name] > 0 then
-				currentOffer[name] = currentOffer[name] - 1
-				if currentOffer[name] <= 0 then currentOffer[name] = nil end
-				if HandleTradeActionEvent then
-					HandleTradeActionEvent:FireServer("UpdateItems", currentOffer)
-				end
-				refreshMyView()
-			end
-		end)
-	end
-end
-
--- Refresh View
-function refreshMyView()
-	for _, v in pairs(myScroll:GetChildren()) do
-		if v:IsA("Frame") then v:Destroy() end
-	end
-
-	for name, qty in pairs(currentOffer) do
-		createItemEntry(myScroll, name, qty, true)
-	end
-
-	local inventory = player:FindFirstChild("Inventory")
-	if inventory then
-		for _, item in pairs(inventory:GetChildren()) do
-			if item:IsA("IntValue") then
-				local offering = currentOffer[item.Name] or 0
-				local remaining = item.Value - offering
-
-				if remaining > 0 then
-					local frame = Instance.new("Frame")
-					frame.Size = UDim2.new(0.95, 0, 0, 40)
-					frame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-					frame.Parent = myScroll
-					Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-
-					local label = Instance.new("TextLabel")
-					label.Size = UDim2.new(1, -10, 1, 0)
-					label.Position = UDim2.new(0, 10, 0, 0)
-					label.BackgroundTransparency = 1
-					label.Text = "+ Add " .. item.Name .. " (Owned: " .. remaining .. ")"
-					label.TextColor3 = Color3.fromRGB(120, 120, 120)
-					label.TextXAlignment = Enum.TextXAlignment.Left
-					label.Font = Enum.Font.Gotham
-					label.TextSize = 12
-					label.Parent = frame
-
-					local btn = Instance.new("TextButton")
-					btn.Size = UDim2.new(1,0,1,0)
-					btn.BackgroundTransparency = 1
-					btn.Text = ""
-					btn.Parent = frame
-
-					btn.MouseButton1Click:Connect(function()
-						if myLockStatus then return end
-						currentOffer[item.Name] = (currentOffer[item.Name] or 0) + 1
-						if HandleTradeActionEvent then
-							HandleTradeActionEvent:FireServer("UpdateItems", currentOffer)
-						end
-						refreshMyView()
-					end)
-				end
-			end
-		end
-	end
-end
-
--- ==========================================
--- 5. Core Logic: Countdown and Auto-Confirmation
--- ==========================================
-
-local function updateMainButton()
-	if isCountdownActive then
-		mainActionBtn.BackgroundColor3 = Color3.fromRGB(241, 196, 15) -- Yellow
-		mainActionBtn.AutoButtonColor = false
-		return
-	end
-
-	if not myLockStatus then
-		mainActionBtn.Text = "Lock Trade (LOCK)"
-		mainActionBtn.BackgroundColor3 = Color3.fromRGB(46, 204, 113) -- Green
-		mainActionBtn.AutoButtonColor = true
-		statusLabel.Text = theirLockStatus and "Partner locked, waiting for you to lock..." or "Please select items and lock..."
-
-	elseif myLockStatus and not theirLockStatus then
-		mainActionBtn.Text = "Waiting for partner..."
-		mainActionBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100) -- Gray
-		mainActionBtn.AutoButtonColor = false
-		statusLabel.Text = "Waiting for partner to lock..."
-
-	elseif myLockStatus and theirLockStatus then
-		-- Both locked -> Countdown coroutine is running at this time
-		mainActionBtn.Text = "Preparing to exchange..."
-		mainActionBtn.BackgroundColor3 = Color3.fromRGB(241, 196, 15)
-		mainActionBtn.AutoButtonColor = false
-	end
-end
-
--- 5-second countdown -> Auto confirmation
-local function startCountdown()
-	if isCountdownActive then return end
-	isCountdownActive = true
-
-	mainActionBtn.AutoButtonColor = false
-	mainActionBtn.BackgroundColor3 = Color3.fromRGB(230, 126, 34) -- Orange
-	statusLabel.Text = "Trade locked, completing soon..."
-
-	for i = 5, 1, -1 do
-		if not isTradeActive or not myLockStatus or not theirLockStatus then
-			isCountdownActive = false
-			updateMainButton()
-			return 
-		end
-		mainActionBtn.Text = "Confirmation Countdown: " .. i
-		task.wait(1)
-	end
-
-	-- Countdown finished -> Auto send confirmation
-	if HandleTradeActionEvent then
-		HandleTradeActionEvent:FireServer("Confirm")
-	end
-
-	mainActionBtn.Text = "Exchanging..."
-	mainActionBtn.BackgroundColor3 = Color3.fromRGB(39, 174, 96) -- Dark green
-	isCountdownActive = false
-end
-
--- ==========================================
--- 6. Event Listeners
--- ==========================================
-
-StartTradeEvent.OnClientEvent:Connect(function(partnerName)
-	if not partnerName then
-		mainFrame.Visible = false
-		isTradeActive = false
-		return
-	end
-
-	isTradeActive = true
-	currentOffer = {}
-	myLockStatus = false
-	theirLockStatus = false
-	isCountdownActive = false
-
-	mainFrame.Visible = true
-	titleLabel.Text = "Trading with " .. partnerName
-	refreshMyView()
-	updateMainButton()
-
-	for _, v in pairs(theirScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
-end)
-
-UpdateTradeUIEvent.OnClientEvent:Connect(function(partnerItems, partnerAcc, partnerConf)
-	if not isTradeActive then return end
-
-	for _, v in pairs(theirScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
-	if partnerItems then
-		for name, qty in pairs(partnerItems) do
-			createItemEntry(theirScroll, name, qty, false)
-		end
-	end
-
-	local oldTheirStatus = theirLockStatus
-	theirLockStatus = partnerAcc
-
-	if myLockStatus and theirLockStatus and not oldTheirStatus then
-		task.spawn(startCountdown)
-	end
-
-	if partnerConf then
-		statusLabel.Text = "Trade successful!"
-		statusLabel.TextColor3 = Color3.fromRGB(46, 204, 113)
-	end
-
-	updateMainButton()
-end)
-
--- ==========================================
--- 7. Button Clicks
--- ==========================================
-
-mainActionBtn.MouseButton1Click:Connect(function()
-	if isCountdownActive then return end 
-	if not HandleTradeActionEvent then return end
-
-	if not myLockStatus then
-		-- Click to lock
-		myLockStatus = true
-		HandleTradeActionEvent:FireServer("Accept")
-
-		-- If partner already locked, now both locked -> Start countdown
-		if theirLockStatus then
-			task.spawn(startCountdown)
-		end
-		updateMainButton()
-	end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-	if HandleTradeActionEvent then
-		HandleTradeActionEvent:FireServer("Cancel")
-	end
+	-- A. 主交易窗口
+	mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	mainFrame.BorderSizePixel = 0
 	mainFrame.Visible = false
-	isTradeActive = false
-end)
+	mainFrame.Parent = gui
+
+	Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(60, 60, 60)
+	stroke.Thickness = 2
+	stroke.Parent = mainFrame
+
+	if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+		mainFrame.Size = UDim2.new(0.95, 0, 0.8, 0) -- 移动端
+	else
+		mainFrame.Size = UDim2.new(0.6, 0, 0.6, 0) -- PC端
+	end
+
+	-- 标题栏
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, 0, 0.1, 0)
+	title.BackgroundTransparency = 1
+	title.Text = "TRADE SYSTEM"
+	title.Font = Enum.Font.FredokaOne
+	title.TextColor3 = Color3.fromRGB(255, 215, 0)
+	title.TextScaled = true
+	title.Parent = mainFrame
+
+	-- 左侧：背包
+	local invFrame = Instance.new("Frame")
+	invFrame.Name = "InventoryFrame"
+	invFrame.Size = UDim2.new(0.46, 0, 0.75, 0)
+	invFrame.Position = UDim2.new(0.02, 0, 0.12, 0)
+	invFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	invFrame.Parent = mainFrame
+	Instance.new("UICorner", invFrame).CornerRadius = UDim.new(0, 6)
+
+	local invTitle = Instance.new("TextLabel")
+	invTitle.Size = UDim2.new(1, 0, 0.1, 0)
+	invTitle.BackgroundTransparency = 1
+	invTitle.Text = "My Inventory"
+	invTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
+	invTitle.Font = Enum.Font.SourceSansBold
+	invTitle.TextSize = 18
+	invTitle.Parent = invFrame
+
+	inventoryScroll = Instance.new("ScrollingFrame")
+	inventoryScroll.Size = UDim2.new(1, -10, 0.88, 0)
+	inventoryScroll.Position = UDim2.new(0, 5, 0.12, 0)
+	inventoryScroll.BackgroundTransparency = 1
+	inventoryScroll.ScrollBarThickness = 4
+	inventoryScroll.Parent = invFrame
+
+	local gridInv = Instance.new("UIGridLayout")
+	gridInv.CellSize = UDim2.new(0.3, 0, 0.3, 0)
+	gridInv.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
+	gridInv.Parent = inventoryScroll
+	local aspectInv = Instance.new("UIAspectRatioConstraint")
+	aspectInv.Parent = gridInv
+
+	-- 右侧：交易栏
+	local offerFrame = Instance.new("Frame")
+	offerFrame.Name = "MyOfferFrame"
+	offerFrame.Size = UDim2.new(0.46, 0, 0.75, 0)
+	offerFrame.Position = UDim2.new(0.52, 0, 0.12, 0)
+	offerFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+	offerFrame.Parent = mainFrame
+	Instance.new("UICorner", offerFrame).CornerRadius = UDim.new(0, 6)
+
+	local offerStroke = Instance.new("UIStroke")
+	offerStroke.Color = Color3.fromRGB(255, 215, 0)
+	offerStroke.Transparency = 0.8
+	offerStroke.Parent = offerFrame
+
+	local offerTitle = Instance.new("TextLabel")
+	offerTitle.Size = UDim2.new(1, 0, 0.1, 0)
+	offerTitle.BackgroundTransparency = 1
+	offerTitle.Text = "My Offer"
+	offerTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+	offerTitle.Font = Enum.Font.SourceSansBold
+	offerTitle.TextSize = 18
+	offerTitle.Parent = offerFrame
+
+	offerScroll = Instance.new("ScrollingFrame")
+	offerScroll.Size = UDim2.new(1, -10, 0.88, 0)
+	offerScroll.Position = UDim2.new(0, 5, 0.12, 0)
+	offerScroll.BackgroundTransparency = 1
+	offerScroll.ScrollBarThickness = 4
+	offerScroll.Parent = offerFrame
+
+	local gridOffer = Instance.new("UIGridLayout")
+	gridOffer.CellSize = UDim2.new(0.3, 0, 0.3, 0)
+	gridOffer.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
+	gridOffer.Parent = offerScroll
+	local aspectOffer = Instance.new("UIAspectRatioConstraint")
+	aspectOffer.Parent = gridOffer
+
+	-- 底部：确认按钮
+	confirmBtn = Instance.new("TextButton")
+	confirmBtn.Name = "ConfirmButton"
+	confirmBtn.Size = UDim2.new(0.4, 0, 0.1, 0)
+	confirmBtn.Position = UDim2.new(0.3, 0, 0.88, 0)
+	confirmBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+	confirmBtn.Text = "CONFIRM TRADE"
+	confirmBtn.Font = Enum.Font.FredokaOne
+	confirmBtn.TextColor3 = Color3.new(1,1,1)
+	confirmBtn.TextScaled = true
+	confirmBtn.Parent = mainFrame
+	Instance.new("UICorner", confirmBtn).CornerRadius = UDim.new(0, 8)
+
+	-- [核心修复] 将监听移到这里，确保按钮已创建
+	confirmBtn.MouseButton1Click:Connect(function()
+		if isLocked then return end
+		isLocked = true
+		confirmBtn.Text = "WAITING..."
+		confirmBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+		tradeEvent:FireServer("ConfirmTrade", myOffer)
+	end)
+
+	statusLabel = Instance.new("TextLabel")
+	statusLabel.Size = UDim2.new(1, 0, 0.05, 0)
+	statusLabel.Position = UDim2.new(0, 0, 1.02, 0)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	statusLabel.Text = "Ready to trade"
+	statusLabel.TextScaled = true
+	statusLabel.Parent = mainFrame
+
+	-- 等待遮罩
+	waitingOverlay = Instance.new("Frame")
+	waitingOverlay.Name = "WaitingOverlay"
+	waitingOverlay.Size = UDim2.new(1, 0, 1, 0)
+	waitingOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	waitingOverlay.BackgroundTransparency = 0.3
+	waitingOverlay.ZIndex = 10
+	waitingOverlay.Visible = false
+	waitingOverlay.Parent = mainFrame
+
+	local waitText = Instance.new("TextLabel")
+	waitText.Text = "Waiting for Player..."
+	waitText.Size = UDim2.new(1, 0, 0.2, 0)
+	waitText.Position = UDim2.new(0, 0, 0.4, 0)
+	waitText.BackgroundTransparency = 1
+	waitText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	waitText.Font = Enum.Font.FredokaOne
+	waitText.TextScaled = true
+	waitText.ZIndex = 11
+	waitText.Parent = waitingOverlay
+
+
+	-- F. 识别墙确认弹窗 (PromptFrame)
+	promptFrame = Instance.new("Frame")
+	promptFrame.Name = "PromptFrame"
+	promptFrame.Size = UDim2.new(0.4, 0, 0.3, 0)
+	if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+		promptFrame.Size = UDim2.new(0.7, 0, 0.35, 0)
+	end
+	promptFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	promptFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	promptFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+	promptFrame.Visible = false
+	promptFrame.Parent = gui
+
+	Instance.new("UICorner", promptFrame).CornerRadius = UDim.new(0, 12)
+	local pStroke = Instance.new("UIStroke")
+	pStroke.Color = Color3.fromRGB(255, 215, 0)
+	pStroke.Thickness = 2
+	pStroke.Parent = promptFrame
+
+	local pTitle = Instance.new("TextLabel")
+	pTitle.Name = "Title"
+	pTitle.Size = UDim2.new(1, 0, 0.3, 0)
+	pTitle.BackgroundTransparency = 1
+	pTitle.Text = "NOTIFICATION"
+	pTitle.Font = Enum.Font.FredokaOne
+	pTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+	pTitle.TextScaled = true
+	pTitle.Parent = promptFrame
+
+	local pDesc = Instance.new("TextLabel")
+	pDesc.Name = "Description"
+	pDesc.Size = UDim2.new(0.9, 0, 0.3, 0)
+	pDesc.Position = UDim2.new(0.05, 0, 0.3, 0)
+	pDesc.BackgroundTransparency = 1
+	pDesc.Text = "Do you want to enter?"
+	pDesc.Font = Enum.Font.SourceSans
+	pDesc.TextColor3 = Color3.fromRGB(200, 200, 200)
+	pDesc.TextScaled = true
+	pDesc.Parent = promptFrame
+
+	local yesBtn = Instance.new("TextButton")
+	yesBtn.Name = "YesButton"
+	yesBtn.Size = UDim2.new(0.4, 0, 0.25, 0)
+	yesBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
+	yesBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+	yesBtn.Text = "YES"
+	yesBtn.Font = Enum.Font.FredokaOne
+	yesBtn.TextColor3 = Color3.new(1,1,1)
+	yesBtn.TextScaled = true
+	yesBtn.Parent = promptFrame
+	Instance.new("UICorner", yesBtn).CornerRadius = UDim.new(0, 6)
+
+	local noBtn = Instance.new("TextButton")
+	noBtn.Name = "NoButton"
+	noBtn.Size = UDim2.new(0.4, 0, 0.25, 0)
+	noBtn.Position = UDim2.new(0.55, 0, 0.65, 0)
+	noBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	noBtn.Text = "NO"
+	noBtn.Font = Enum.Font.FredokaOne
+	noBtn.TextColor3 = Color3.new(1,1,1)
+	noBtn.TextScaled = true
+	noBtn.Parent = promptFrame
+	Instance.new("UICorner", noBtn).CornerRadius = UDim.new(0, 6)
+
+	yesBtn.MouseButton1Click:Connect(function()
+		promptFrame.Visible = false
+		if activePromptSource == "Wall" and bossEvent then
+			bossEvent:FireServer("YES")
+		else
+			tradeEvent:FireServer("ConfirmEnter")
+		end
+	end)
+
+	noBtn.MouseButton1Click:Connect(function()
+		promptFrame.Visible = false
+		if activePromptSource == "Wall" and bossEvent then
+			bossEvent:FireServer("NO")
+		else
+			tradeEvent:FireServer("CancelEnter")
+		end
+	end)
+end
+
+-- ==========================================
+-- 3. 卡片渲染
+-- ==========================================
+local function createCard(itemName, parentContainer, isOfferSide)
+	local itemInfo = GameConfig.Weapons[itemName] or GameConfig.Items[itemName]
+	if not itemInfo then return end
+
+	local btn = Instance.new("ImageButton")
+	btn.Name = itemName
+	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+	btn.Parent = parentContainer
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0.1, 0)
+
+	local icon = Instance.new("ImageLabel")
+	icon.Size = UDim2.new(0.8, 0, 0.8, 0)
+	icon.Position = UDim2.new(0.1, 0, 0.1, 0)
+	icon.BackgroundTransparency = 1
+	icon.Image = "rbxassetid://80988936453816"
+	icon.Parent = btn
+
+	btn.MouseButton1Click:Connect(function()
+		if isLocked or not isTradingActive then return end 
+
+		if isOfferSide then
+			for i, name in ipairs(myOffer) do
+				if name == itemName then
+					table.remove(myOffer, i)
+					break
+				end
+			end
+		else
+			if #myOffer < 9 then
+				table.insert(myOffer, itemName)
+			end
+		end
+		updateUI()
+	end)
+end
+
+function updateUI()
+	if not mainFrame then return end
+
+	for _, c in pairs(inventoryScroll:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+	for _, c in pairs(offerScroll:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+
+	local myInventory = {}
+	local invFolder = player:FindFirstChild("Inventory")
+	if invFolder then
+		for _, itemVal in pairs(invFolder:GetChildren()) do
+			local countInTrade = 0
+			for _, offerName in ipairs(myOffer) do
+				if offerName == itemVal.Name then countInTrade = countInTrade + 1 end
+			end
+			if itemVal.Value > countInTrade then
+				table.insert(myInventory, itemVal.Name)
+			end
+		end
+	end
+
+	for _, name in ipairs(myInventory) do createCard(name, inventoryScroll, false) end
+	for _, name in ipairs(myOffer) do createCard(name, offerScroll, true) end
+end
+
+-- ==========================================
+-- 4. 监听与初始化
+-- ==========================================
+createResponsiveUI()
+
+-- 监听普通交易事件
+if tradeEvent then
+	tradeEvent.OnClientEvent:Connect(function(action, data)
+		if action == "Open" then
+			mainFrame.Visible = true
+			isTradingActive = false 
+			waitingOverlay.Visible = true
+		elseif action == "Start" then
+			waitingOverlay.Visible = false
+			isTradingActive = true
+			statusLabel.Text = "Trading with: " .. tostring(data or "Player")
+		elseif action == "Close" then
+			mainFrame.Visible = false
+			promptFrame.Visible = false 
+		elseif action == "Prompt" or action == "ShowPrompt" then
+			activePromptSource = "Trade" 
+			promptFrame.Visible = true
+			if data and type(data) == "string" then
+				promptFrame.Description.Text = data
+			end
+		end
+	end)
+end
+
+-- 监听 BossBattleEvent (交易所墙壁)
+if bossEvent then
+	bossEvent.OnClientEvent:Connect(function(action, data)
+		if action == "ASK_FIGHT" then
+			activePromptSource = "Wall" 
+			promptFrame.Visible = true
+			promptFrame.Title.Text = "EXCHANGE AREA"
+			promptFrame.Description.Text = data or "Enter Exchange?"
+		end
+	end)
+else
+	-- 如果 bossEvent 为空，尝试重新获取一次 (延迟绑定)
+	task.spawn(function()
+		bossEvent = RemoteEventFolder:WaitForChild("BossBattleEvent", 10)
+		if bossEvent then
+			bossEvent.OnClientEvent:Connect(function(action, data)
+				if action == "ASK_FIGHT" then
+					activePromptSource = "Wall" 
+					promptFrame.Visible = true
+					promptFrame.Title.Text = "EXCHANGE AREA"
+					promptFrame.Description.Text = data or "Enter Exchange?"
+				end
+			end)
+		end
+	end)
+end
+
+-- 监听背包变化
+if player:FindFirstChild("Inventory") then
+	player.Inventory.ChildAdded:Connect(updateUI)
+	player.Inventory.ChildRemoved:Connect(updateUI)
+end
