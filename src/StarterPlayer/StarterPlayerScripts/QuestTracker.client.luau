@@ -19,7 +19,7 @@ screenGui.DisplayOrder = -10
 -- A. 任务折叠/展开按钮 (圆形)
 local toggleBtn = Instance.new("ImageButton")
 toggleBtn.Name = "QuestToggle"
-toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Size = UDim2.new(0, 40, 0, 40)
 -- 位置：贴左边 (X=0)，背包按钮(0.4)的下方 (Y=0.55)
 toggleBtn.Position = UDim2.new(0, 10, 0.55, 0)
 toggleBtn.AnchorPoint = Vector2.new(0, 0.5)
@@ -35,7 +35,7 @@ btnCorner.CornerRadius = UDim.new(1, 0)
 btnCorner.Parent = toggleBtn
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(255, 215, 0)
+stroke.Color = Color3.fromRGB(74, 74, 74)
 stroke.Thickness = 2
 stroke.Parent = toggleBtn
 

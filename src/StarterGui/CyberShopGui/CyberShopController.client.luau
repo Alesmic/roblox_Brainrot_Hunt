@@ -309,7 +309,7 @@ local function refreshContent()
 	for _, c in pairs(rightScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 
 	task.spawn(function()
-		-- 加载商店物品
+		-- 1. 加载商店物品 (右侧)
 		local allShopItems = {}
 		local loadTarget = {}
 
@@ -343,12 +343,14 @@ local function refreshContent()
 			createItemCard(rightScroll, item, false)
 		end
 
-		-- 加载背包
+		-- 2. 加载背包 (左侧) - [修复重点]
 		local success, inventory = pcall(function() return getInvFunc:InvokeServer() end)
 		if success and inventory then
 			if leftScroll and leftScroll.Parent then
 				for _, item in pairs(inventory) do
-					if item.CanSell then
+					-- [修改] 移除 item.CanSell 检查，防止因数据缺失导致不显示
+					-- 只要物品有价格（即使是0）或者直接显示所有物品
+					if (item.Price or 0) >= 0 then 
 						createItemCard(leftScroll, item, true)
 					end
 				end

@@ -12,9 +12,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CustomHUD_BottomLeft"
 screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 10 -- 保证在最上层
+screenGui.DisplayOrder = -10 -- 保证在最上层
 screenGui.Parent = playerGui
-screenGui.DisplayOrder = -10
 
 -- 主容器
 local container = Instance.new("Frame")
@@ -107,7 +106,7 @@ goldIcon.Size = UDim2.new(0.8, 0, 0.8, 0)
 goldIcon.SizeConstraint = Enum.SizeConstraint.RelativeYY
 goldIcon.Position = UDim2.new(0.3, 0, 0.1, 0)
 goldIcon.BackgroundTransparency = 1
-goldIcon.Image = "rbxasset://textures/ui/common/robux_small.png" -- 这里换成你的金币图
+goldIcon.Image = "http://www.roblox.com/asset/?id=163851446" -- 这里换成你的金币图
 goldIcon.Parent = topInfoFrame
 
 local goldText = Instance.new("TextLabel")

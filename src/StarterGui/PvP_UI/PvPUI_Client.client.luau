@@ -12,6 +12,7 @@ local screenGui = script.Parent
 screenGui.ResetOnSpawn = false 
 -- [Important] Set to false to let Roblox automatically handle top notch/status bar to avoid button occlusion
 screenGui.IgnoreGuiInset = false 
+screenGui.DisplayOrder = -10
 
 -- Create main container Frame
 local mainFrame = Instance.new("Frame")
@@ -22,13 +23,13 @@ mainFrame.AnchorPoint = Vector2.new(1, 0)
 
 -- [Core Adaptation 2: Position] 
 -- UDim2.new(X scale, X offset, Y scale, Y offset)
--- Position at 2% from right edge and 2% from top edge
-mainFrame.Position = UDim2.new(0.98, 0, 0.02, 0) 
+-- Position at 0% from right edge and 2% from top edge
+mainFrame.Position = UDim2.new(1, 0, 0, 0) 
 
 -- [Core Adaptation 3: Base Size] 
 -- Use Scale (percentage) instead of fixed Offset (pixels)
 -- Base width set to 18% of screen width, height set to 8% of screen height (adjust based on actual effect)
-mainFrame.Size = UDim2.new(0.18, 0, 0.08, 0)
+mainFrame.Size = UDim2.new(0.12, 0, 0.08, 0)
 
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 mainFrame.BackgroundTransparency = 0.3
