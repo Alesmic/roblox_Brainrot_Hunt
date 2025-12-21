@@ -23,7 +23,7 @@ screenGui.DisplayOrder = -10
 -- ==========================================
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame" -- 必须叫 MainFrame
-mainFrame.Size = UDim2.new(0.5, 0, 0.4, 0)
+mainFrame.Size = UDim2.new(0.7, 0, 0.8, 0)
 mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)

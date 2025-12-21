@@ -325,12 +325,6 @@ GameConfig.Items = {
 		Price = 20, Category = "Consumables", CanSell = true, HideInShop = true,
 		Rarity = "Common",
 		ImageId = "rbxassetid://108387389354561"
-	},
-	["Gold Statue"] = {
-		DisplayName = "Gold Statue", Type = "Statue", 
-		Price = 1000, Category = "Misc", CanSell = true,
-		Rarity = "Epic",
-		ImageId = "rbxassetid://"
 	}
 }
 
