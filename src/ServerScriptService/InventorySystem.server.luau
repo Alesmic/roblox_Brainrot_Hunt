@@ -2,10 +2,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
+-- 引入配置文件
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
 -- ==========================================
--- 1. 远程接口初始化
+-- 1. 远程接口自动初始化
 -- ==========================================
 local function ensureFolder(name, parent)
 	local folder = parent:FindFirstChild(name)
@@ -30,93 +31,115 @@ local function ensureRemoteEvent(name)
 	return re
 end
 
--- 初始化所有接口
+-- 初始化接口
 local buyItemFunc = ensureRemoteFunc("BuyItem")
 local getInvFunc = ensureRemoteFunc("GetInventoryData")
 local sellEvent = ensureRemoteEvent("SellItem")
 
 ensureRemoteEvent("StartTradeUI")
+ensureRemoteEvent("QuestCompleted") -- [新增] 用于通知客户端显示奖励弹窗
 ensureRemoteEvent("HandleTradeAction")
 ensureRemoteEvent("UpdateTradeUI")
 ensureRemoteEvent("BossBattleEvent")
-
--- [新增] 商店开启信号
 ensureRemoteEvent("OpenShopUI") 
+ensureRemoteEvent("OpenDoctorUI")
 
-print("✅ [InventorySystem] 远程接口加载完毕 (含 OpenShopUI)")
+print("✅ [InventorySystem] 远程接口加载完毕")
 
 -- ==========================================
--- 2. [核心修复] 实体道具完全同步器 (Observer)
+-- 2. 实体道具同步器 (核心修复：含 StarterGear)
 -- ==========================================
--- 这个函数负责让 实体道具 永远等于 数据数值
 local function syncPhysicalTool(player, itemName, dataQty)
-	-- 确保 ServerStorage 有这个道具模型
-	local toolModel = ServerStorage:FindFirstChild("Tools") and ServerStorage.Tools:FindFirstChild(itemName)
-	if not toolModel then return end -- 如果模型库里没这个东西，忽略
+	-- 尝试从 ServerStorage 获取道具模型
+	local toolModel = nil
+	if ServerStorage:FindFirstChild("Tools") then
+		toolModel = ServerStorage.Tools:FindFirstChild(itemName)
+	end
+	-- 兼容旧结构
+	if not toolModel and ServerStorage:FindFirstChild("Items") then
+		toolModel = ServerStorage.Items:FindFirstChild(itemName)
+	end
+
+	-- 如果服务器没有这个道具模型，就只管数据，不管实体
+	if not toolModel then return end
 
 	local backpack = player:WaitForChild("Backpack")
-	local character = player.Character or player.CharacterAdded:Wait()
+	local starterGear = player:WaitForChild("StarterGear") -- [新增] 获取 StarterGear
+	local character = player.Character
 
-	-- 计算当前玩家身上实际有几个这个道具 (背包 + 手持)
+	-- A. 统计当前持有的实体数量
 	local currentPhysicalCount = 0
 	local toolsToRemove = {}
 
 	-- 检查背包
 	for _, t in pairs(backpack:GetChildren()) do
 		if t.Name == itemName then
-			currentPhysicalCount = currentPhysicalCount + 1
+			currentPhysicalCount += 1
 			table.insert(toolsToRemove, t)
 		end
 	end
-	-- 检查手上
-	local handTool = character:FindFirstChild(itemName)
-	if handTool then
-		currentPhysicalCount = currentPhysicalCount + 1
-		table.insert(toolsToRemove, handTool)
+	-- 检查手上 (Character)
+	if character then
+		local handTool = character:FindFirstChild(itemName)
+		if handTool then
+			currentPhysicalCount += 1
+			table.insert(toolsToRemove, handTool)
+		end
 	end
 
-	-- [同步逻辑]
-	if dataQty > currentPhysicalCount then
-		-- 数据比实体多，需要补发
-		local need = dataQty - currentPhysicalCount
-		-- 限制：如果是武器(Weapons)，无论数据多少，实体最多只给1把，防止Bug
+	-- B. 同步逻辑
+	if dataQty > 0 then
+		-- [获得物品]
+
+		-- 1. 确保背包里有 (如果是武器且只能持有一把，确保不重复)
 		local conf = GameConfig.Weapons[itemName]
 		if conf and currentPhysicalCount >= 1 then 
-			return -- 武器有一把就够了
-		end
-
-		-- 补发道具
-		for i = 1, need do
-			toolModel:Clone().Parent = backpack
-		end
-
-	elseif dataQty < currentPhysicalCount then
-		-- 实体比数据多 (比如卖掉了)，需要删除
-		local removeCount = currentPhysicalCount - dataQty
-		for i = 1, removeCount do
-			if toolsToRemove[i] then
-				toolsToRemove[i]:Destroy()
+			-- 武器已有，不再发放
+		else
+			-- 需要发放 (比如消耗品堆叠，或者还没武器)
+			if currentPhysicalCount < dataQty then
+				local need = dataQty - currentPhysicalCount
+				for i = 1, need do
+					toolModel:Clone().Parent = backpack
+				end
 			end
+		end
+
+		-- 2. [关键] 同步到 StarterGear (确保重生后还有)
+		if not starterGear:FindFirstChild(itemName) then
+			toolModel:Clone().Parent = starterGear
+		end
+
+	else
+		-- [失去/出售物品] -> dataQty <= 0
+
+		-- 1. 删除背包和手上的
+		for _, t in pairs(toolsToRemove) do
+			t:Destroy()
+		end
+
+		-- 2. [核心修复] 删除 StarterGear 里的备份 (防止无法再次购买)
+		local sgTool = starterGear:FindFirstChild(itemName)
+		if sgTool then
+			sgTool:Destroy()
+			print("♻️ [InventorySystem] 已清除 StarterGear 中的: " .. itemName)
 		end
 	end
 end
 
--- 监听玩家库存变化
 local function bindInventorySync(player)
 	local inv = player:WaitForChild("Inventory", 10)
 	if not inv then return end
 
-	-- 1. 监听现有物品的变化
+	-- 初始同步
 	for _, item in pairs(inv:GetChildren()) do
-		-- 初始同步
 		syncPhysicalTool(player, item.Name, item.Value)
-		-- 变化监听
 		item.Changed:Connect(function(newVal)
 			syncPhysicalTool(player, item.Name, newVal)
 		end)
 	end
 
-	-- 2. 监听新物品添加
+	-- 监听新物品
 	inv.ChildAdded:Connect(function(child)
 		if child:IsA("IntValue") then
 			syncPhysicalTool(player, child.Name, child.Value)
@@ -128,7 +151,7 @@ local function bindInventorySync(player)
 end
 
 -- ==========================================
--- 3. 规则校验 (CanReceiveItem)
+-- 3. 规则校验与购买逻辑
 -- ==========================================
 local function canPlayerReceiveItem(player, itemName, addQty)
 	local inv = player:FindFirstChild("Inventory")
@@ -137,14 +160,13 @@ local function canPlayerReceiveItem(player, itemName, addQty)
 	local conf = GameConfig.Weapons[itemName] or GameConfig.Items[itemName] or GameConfig.Skin[itemName]
 	if not conf then return false, "Invalid Item" end
 
-	-- 武器唯一性
 	if conf.Category == "Weapons" then
-		if inv:FindFirstChild(itemName) or player.Backpack:FindFirstChild(itemName) then
+		-- 武器唯一性检查
+		if inv:FindFirstChild(itemName) then
 			return false, "Item Limit: Weapon Unique"
 		end
 	end
 
-	-- 医疗包上限 (Max 3)
 	if itemName == "Medpack" then
 		local currentQty = inv:FindFirstChild(itemName) and inv:FindFirstChild(itemName).Value or 0
 		if currentQty + addQty > 3 then
@@ -156,9 +178,7 @@ local function canPlayerReceiveItem(player, itemName, addQty)
 end
 _G.CanReceiveItem = canPlayerReceiveItem
 
--- ==========================================
--- 4. 交易与购买逻辑 (只改数据，不碰道具)
--- ==========================================
+-- 购买处理 (InventorySystem 版)
 buyItemFunc.OnServerInvoke = function(player, itemName)
 	local conf = GameConfig.Weapons[itemName] or GameConfig.Items[itemName] or GameConfig.Skin[itemName]
 	if not conf then return false, "No Config" end
@@ -171,7 +191,6 @@ buyItemFunc.OnServerInvoke = function(player, itemName)
 
 	gold.Value = gold.Value - (conf.Price or 0)
 
-	-- [关键] 只修改数据！监听器会自动发道具
 	local inv = player:FindFirstChild("Inventory")
 	local itemVal = inv:FindFirstChild(itemName)
 	if itemVal then
@@ -186,25 +205,36 @@ buyItemFunc.OnServerInvoke = function(player, itemName)
 	return true, "Success"
 end
 
+-- [出售处理] 核心逻辑
 sellEvent.OnServerEvent:Connect(function(player, itemName, _, qty)
 	local inv = player:FindFirstChild("Inventory")
 	local itemVal = inv and inv:FindFirstChild(itemName)
 	local conf = GameConfig.Weapons[itemName] or GameConfig.Items[itemName] or GameConfig.Skin[itemName]
 
 	if itemVal and itemVal.Value >= qty then
-		-- [关键] 只修改数据！监听器会自动删除道具
+		-- 1. 扣除数量
 		itemVal.Value = itemVal.Value - qty
 
+		-- 2. 加钱
 		local gain = math.floor((conf.Price or 0) * 0.5) * qty
+		-- 特殊保底逻辑 (防止0元物品卖出0元)
+		if gain <= 0 and conf.CanSell then
+			if conf.Rarity == "Legendary" then gain = 200
+			elseif conf.Rarity == "Rare" then gain = 50
+			else gain = 10 end
+		end
 		player.leaderstats.Gold.Value = player.leaderstats.Gold.Value + gain
 
+		-- 3. 如果数量归零，销毁数据
+		-- 这会触发 itemVal.Changed 或 ChildRemoved，进而触发 syncPhysicalTool(..., 0)
+		-- 从而清理 Backpack 和 StarterGear
 		if itemVal.Value <= 0 then
-			itemVal:Destroy()
-			-- 此时监听器会捕捉到 Value=0 (或对象移除前瞬间)，并执行清理
-			-- 如果直接 Destroy 导致 Changed 没触发，syncPhysicalTool 会在下次校验时修正
-			-- 显式调用一次清理以防万一
+			-- 显式调用一次清理，确保万无一失
 			syncPhysicalTool(player, itemName, 0)
+			itemVal:Destroy()
 		end
+
+		print("💰 [Server] 玩家出售了 " .. itemName .. " 获得 " .. gain)
 	end
 end)
 
@@ -221,7 +251,9 @@ getInvFunc.OnServerInvoke = function(player)
 					Qty = item.Value,
 					Category = conf.Category or "Items",
 					ImageId = conf.ImageId,
-					Price = conf.Price
+					Price = conf.Price,
+					CanSell = conf.CanSell,
+					Rarity = conf.Rarity
 				})
 			end
 		end
@@ -230,19 +262,20 @@ getInvFunc.OnServerInvoke = function(player)
 end
 
 -- ==========================================
--- 5. 初始化流程
+-- 4. 初始化流程
 -- ==========================================
 Players.PlayerAdded:Connect(function(player)
-	-- 创建 Inventory 文件夹
-	local inv = Instance.new("Folder")
+	local inv = player:FindFirstChild("Inventory") or Instance.new("Folder")
 	inv.Name = "Inventory"
 	inv.Parent = player
 
 	player.CharacterAdded:Connect(function(char)
-		-- 每次重生，开启监听器并进行一次全量同步
 		task.wait(1) 
 		bindInventorySync(player)
 	end)
+
+	-- 初次进入也绑定
+	bindInventorySync(player)
 end)
 
-print("✅ [InventorySystem] 数据驱动模式已启动 (数据与实体强制同步)")
+print("✅ [InventorySystem] 服务端逻辑就绪 (StarterGear 同步修复版)")

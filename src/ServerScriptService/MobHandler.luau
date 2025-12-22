@@ -8,12 +8,21 @@ local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local MobHandler = {}
 
 -- ==========================================
--- Configuration Area
+-- 配置区
 -- ==========================================
-local RESPAWN_TIME = 300       -- Respawn cooldown: 5 minutes
-local CORPSE_LIFETIME = 3      -- Corpse retention time (seconds)
+local RESPAWN_TIME = 300       -- 默认重生时间 (5分钟)
+local CORPSE_LIFETIME = 3      -- 尸体保留时间 (秒)
 
--- Store mob templates
+-- [新增] Boss 识别关键词 (名字里带这些的都算 Boss)
+local BOSS_KEYWORDS = {"Boss", "Guardian", "Master"}
+
+-- [新增] Boss 白名单 (名字里没关键词，但你想算作 Boss 的可以加在这里)
+local BOSS_WHITELIST = {
+	["WolfBoss"] = true, -- 示例
+	["DesertBoss"] = true,
+}
+
+-- 存储怪物模板
 local MobRegistry = {} 
 local mobTemplateFolder = ServerStorage:FindFirstChild("MobTemplates")
 if not mobTemplateFolder then
@@ -22,7 +31,7 @@ if not mobTemplateFolder then
 	mobTemplateFolder.Parent = ServerStorage
 end
 
--- Record respawn times
+-- 记录重生时间
 MobHandler.DeadBosses = {} 
 
 function MobHandler.getRespawnTime(mobName)
@@ -30,41 +39,71 @@ function MobHandler.getRespawnTime(mobName)
 end
 
 -- ==========================================
--- Helper Function: Give Item (Keep your loot logic)
+-- 辅助功能：判断是否为 Boss
+-- ==========================================
+local function isBoss(mobName)
+	-- 1. 检查白名单
+	if BOSS_WHITELIST[mobName] then return true end
+
+	-- 2. 检查关键词匹配
+	for _, keyword in ipairs(BOSS_KEYWORDS) do
+		if string.find(mobName, keyword) then
+			return true
+		end
+	end
+
+	return false
+end
+
+-- ==========================================
+-- 辅助功能：触发客户端弹窗
+-- ==========================================
+local function notifyClient(player, title, gold, exp)
+	local RemoteEventFolder = ReplicatedStorage:FindFirstChild("RemoteEvent")
+	if RemoteEventFolder then
+		local notifyEvent = RemoteEventFolder:FindFirstChild("QuestCompleted")
+		if notifyEvent then
+			notifyEvent:FireClient(player, title, gold, exp)
+		end
+	end
+end
+
+-- ==========================================
+-- 辅助功能：给玩家发放物品 (防重复逻辑)
 -- ==========================================
 local function giveItemToPlayer(player, itemName)
-	-- [新增] 1. 获取物品配置，检查是否为武器
+	-- 1. 获取物品配置
 	local itemConfig = GameConfig.Weapons[itemName] or GameConfig.Items[itemName]
 
-	-- 如果是武器，且玩家已经拥有（检查背包、StarterGear 或 Inventory 数据），则直接停止
+	-- 如果是武器，执行唯一性检查
 	if itemConfig and itemConfig.Category == "Weapons" then
-		-- 检查背包或初始装备中是否已存在
+		-- 检查背包或初始装备
 		if player.Backpack:FindFirstChild(itemName) or player.StarterGear:FindFirstChild(itemName) then
 			print("⚠️ [MobHandler] 玩家已有武器: " .. itemName .. "，跳过掉落。")
 			return false
 		end
 
-		-- 检查 Inventory 数据是否已记录
+		-- 检查数据层
 		local inv = player:FindFirstChild("Inventory")
 		if inv and inv:FindFirstChild(itemName) and inv[itemName].Value >= 1 then
 			return false
 		end
 	end
 
-	-- 下面是原有的获取逻辑
+	-- 查找物品模型
 	local tool = ServerStorage:FindFirstChild("Tools") and ServerStorage.Tools:FindFirstChild(itemName)
 	if not tool then
 		tool = ServerStorage:FindFirstChild("Items") and ServerStorage.Items:FindFirstChild(itemName)
 	end
 
 	if tool then
-		-- [优化] 再次确保背包里没有才给（防止并发）
+		-- 发放到背包
 		if not player.Backpack:FindFirstChild(itemName) then
 			local clone = tool:Clone()
 			clone.Parent = player.Backpack
 		end
 
-		-- [新增] 同时给到 StarterGear，防止死后丢失（如果不希望掉落物死后保留，可去掉这行）
+		-- 发放到 StarterGear (确保重生不丢)
 		if not player.StarterGear:FindFirstChild(itemName) then
 			tool:Clone().Parent = player.StarterGear
 		end
@@ -79,7 +118,7 @@ local function giveItemToPlayer(player, itemName)
 				itemVal.Value = 0
 				itemVal.Parent = inventory
 			end
-			-- 如果是武器，锁定数量为 1；如果是消耗品，则增加
+
 			if itemConfig and itemConfig.Category == "Weapons" then
 				itemVal.Value = 1
 			else
@@ -94,20 +133,20 @@ local function giveItemToPlayer(player, itemName)
 end
 
 -- ==========================================
--- Core Logic: Handle Mob Death Cycle
+-- 核心逻辑：怪物生命周期管理
 -- ==========================================
 local function handleMobLifecycle(mob, originCFrame)
 	local humanoid = mob:WaitForChild("Humanoid", 10)
 	if not humanoid then return end
 
-	-- Listen for death
+	-- 监听死亡
 	humanoid.Died:Connect(function()
 		print("💀 [MobHandler] " .. mob.Name .. " has died")
 
-		-- [Added] 1. Record respawn time (Prevent being detected as existing before respawn)
+		-- 1. 记录死亡时间
 		MobHandler.DeadBosses[mob.Name] = os.time() + RESPAWN_TIME
 
-		-- Get killer
+		-- 获取击杀者
 		local creatorTag = humanoid:FindFirstChild("creator")
 		local killerPlayer = creatorTag and creatorTag.Value
 
@@ -116,37 +155,51 @@ local function handleMobLifecycle(mob, originCFrame)
 			local mobConfig = GameConfig.Mobs[mob.Name]
 
 			if mobConfig then
-				-- A. Give experience
+				-- A. 给予经验
 				local leaderstats = killerPlayer:FindFirstChild("leaderstats")
 				if leaderstats and leaderstats:FindFirstChild("Experience") then
 					leaderstats.Experience.Value = leaderstats.Experience.Value + mobConfig.Exp
 				end
 
-				-- B. Give gold (if configured)
+				-- B. 给予金币
 				if leaderstats and leaderstats:FindFirstChild("Gold") and mobConfig.GoldReward then
 					leaderstats.Gold.Value = leaderstats.Gold.Value + mobConfig.GoldReward
 				end
 
-				-- C. Update quest progress (Quest)
+				-- [修改] 仅当是 Boss 时，才触发击杀奖励弹窗
+				if isBoss(mob.Name) then
+					notifyClient(killerPlayer, "Defeated " .. mob.Name, mobConfig.GoldReward or 0, mobConfig.Exp)
+				end
+
+				-- C. 更新任务进度
 				local hiddenStats = killerPlayer:FindFirstChild("HiddenStats")
 				if hiddenStats and GameConfig.Quests then
 					for questID, questData in pairs(GameConfig.Quests) do
 						if questData.TargetMob == mob.Name then
 							local questStat = hiddenStats:FindFirstChild("Quest_" .. questID)
+
 							if questStat and questStat.Value < questData.TargetCount then
 								questStat.Value = questStat.Value + 1
-								-- Simple immediate quest completion reward
-								if questStat.Value == questData.TargetCount and questData.GoldReward then
-									if leaderstats and leaderstats.Gold then
+
+								-- 任务完成逻辑
+								if questStat.Value == questData.TargetCount then
+									-- 发放任务奖励
+									if questData.GoldReward and leaderstats and leaderstats.Gold then
 										leaderstats.Gold.Value = leaderstats.Gold.Value + questData.GoldReward
 									end
+									if questData.ExpReward and leaderstats and leaderstats.Experience then
+										leaderstats.Experience.Value = leaderstats.Experience.Value + questData.ExpReward
+									end
+
+									-- [保留] 任务完成总是弹窗
+									notifyClient(killerPlayer, "Completed: " .. questData.Name, questData.GoldReward, questData.ExpReward)
 								end
 							end
 						end
 					end
 				end
 
-				-- D. Item drops (Drops)
+				-- D. 物品掉落
 				if mobConfig.Drops then
 					for _, dropData in pairs(mobConfig.Drops) do
 						if math.random() <= dropData.Chance then
@@ -160,26 +213,18 @@ local function handleMobLifecycle(mob, originCFrame)
 			end
 		end
 
-		-- [Critical] 2. Notify BossRoomManager (Victory settlement)
+		-- 2. 通知 Boss 房间管理器 (如果存在)
 		local notifyEvent = ServerStorage:FindFirstChild("BossDeathNotify")
 		if notifyEvent then
-			print("📡 [MobHandler] Sending Boss death notification: " .. mob.Name)
 			notifyEvent:Fire(mob.Name)
-		else
-			-- Fallback: Try to find in _G if event not found on first run
-			if _G.BossRoomManager then
-				_G.BossRoomManager.onBossDeath(mob.Name)
-			else
-				warn("⚠️ [MobHandler] BossDeathNotify event not found, and _G.BossRoomManager is missing!")
-			end
 		end
 
-		-- 3. Corpse cleanup
+		-- 3. 尸体清理
 		task.delay(CORPSE_LIFETIME, function()
 			if mob and mob.Parent then mob:Destroy() end
 		end)
 
-		-- 4. Respawn countdown
+		-- 4. 启动重生倒计时
 		task.delay(RESPAWN_TIME, function()
 			MobHandler.respawnMob(mob.Name, originCFrame)
 		end)
@@ -187,12 +232,12 @@ local function handleMobLifecycle(mob, originCFrame)
 end
 
 -- ==========================================
--- Respawn and Initialization Functions
+-- 重生与初始化函数
 -- ==========================================
 function MobHandler.respawnMob(mobName, spawnCFrame)
 	local template = MobRegistry[mobName]
 	if template then
-		MobHandler.DeadBosses[mobName] = nil -- Clear death record
+		MobHandler.DeadBosses[mobName] = nil -- 清除死亡记录
 
 		local newMob = template:Clone()
 		newMob.Name = mobName
@@ -201,7 +246,6 @@ function MobHandler.respawnMob(mobName, spawnCFrame)
 
 		newMob.Parent = Workspace:WaitForChild("NPCs")
 
-		-- Rebind lifecycle
 		handleMobLifecycle(newMob, spawnCFrame)
 		MobHandler.setupMob(newMob)
 
@@ -222,7 +266,7 @@ function MobHandler.setupMob(mob)
 end
 
 -- ==========================================
--- Initialization: Scan existing mobs and create templates
+-- 初始化：扫描现有怪物
 -- ==========================================
 local npcFolder = Workspace:WaitForChild("NPCs")
 
@@ -231,7 +275,6 @@ for _, mob in pairs(npcFolder:GetChildren()) do
 		local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso")
 		local originCF = root and root.CFrame or mob:GetPivot()
 
-		-- Create backup template (for respawning)
 		if not MobRegistry[mob.Name] then
 			local template = mob:Clone()
 			for _, script in pairs(template:GetDescendants()) do

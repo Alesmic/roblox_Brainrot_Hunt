@@ -202,7 +202,7 @@ GameConfig.Mobs = {
 	-- Forest Boss (Unlocked at Lvl 50)
 	["WolfBoss"] = { 
 		Name = "AntBoss", 
-		MaxHealth = 2000,   
+		MaxHealth = 1000,   
 		Damage = 40,
 		Exp = 2000,
 		UnlockLevel = 50,  -- Unlocks Boss Fight at Level 50
@@ -303,7 +303,7 @@ GameConfig.Weapons = {
 		ImageId = "rbxasset://Textures/Sword128.png"
 	},
 	["Machete"] = { 
-		DisplayName = "Machete", Damage = 69, Cooldown = 0.3, 
+		DisplayName = "Machete", Damage = 200, Cooldown = 0.1, 
 		Category = "Weapons", Price = 100, 
 		CanSell = true, Rarity = "Legendary",
 		ImageId = "http://www.roblox.com/asset/?id=7722474825"

@@ -1,9 +1,14 @@
 --Rescripted by TakeoHonorable
+-- Fixed to use GameConfig
 
 local Tool = script.Parent
 Tool.Enabled = true
 
 local Handle = Tool:WaitForChild("Handle")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- [新增] 引入配置
+local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
 local Sounds = {
 	Hit = Handle:WaitForChild("Hit"),
@@ -67,16 +72,23 @@ function Touched(hit)
 	if not hit or not hit.Parent or Tool.Enabled then return end
 	local hum,ff = hit.Parent:FindFirstChildOfClass("Humanoid"),hit.Parent:FindFirstChildOfClass("ForceField")
 	if not hum or hum.Health <= 0 or ff or IsTeamMate(Services.Players:GetPlayerFromCharacter(hum.Parent),Player) or IsInTable(HitHumanoids,hum) then return end
-	
+
 	HitHumanoids[#HitHumanoids+1]=hum
 	UntagHumanoid(hum)
 	TagHumanoid(hum,Player)
-	hum:TakeDamage(20)
+
+	-- [关键修复] 从配置中读取伤害，如果没有配置则默认为 20
+	local damage = 20
+	if GameConfig.Weapons["Machete"] then
+		damage = GameConfig.Weapons["Machete"].Damage
+	end
+	hum:TakeDamage(damage)
+
 	Sounds.Hit:Play()
 	if not string.find(string.lower(hit.Name),"root") and ((string.find(string.lower(hit.Name),"torso") or string.find(string.lower(hit.Name),"head")) and Random.new():NextNumber(0,100) <= 50) or (not string.find(string.lower(hit.Name),"torso") and not string.find(string.lower(hit.Name),"head") and not string.find(string.lower(hit.Name),"root")) then
 		hit.Anchored = false
-		
-		
+
+
 	end
 
 end
@@ -85,13 +97,13 @@ function Equipped()
 	Character = Tool.Parent
 	Player = Services.Players:GetPlayerFromCharacter(Character)
 	Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	
+
 	if not Humanoid or Humanoid.Health <= 0 then return end
-	
+
 	Animations = {
 		ChopAnim = Humanoid:LoadAnimation(Tool:WaitForChild("Chop"..Humanoid.RigType.Name))
 	}
-	
+
 	events[#events+1] = Tool.Activated:Connect(Activated)
 	events[#events+1] = Handle.Touched:Connect(Touched)
 end

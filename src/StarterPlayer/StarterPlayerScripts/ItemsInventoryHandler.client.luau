@@ -28,7 +28,27 @@ local function isSmallScreen()
 end
 
 -- ==========================================
--- 2. 初始化 UI (极简紧凑布局)
+-- 价格计算辅助函数
+-- ==========================================
+local function calculateSellPrice(itemName, conf)
+	if conf.SellPrice then return conf.SellPrice end
+
+	local basePrice = conf.Price or 0
+	local finalSellPrice = math.floor(basePrice * 0.5)
+
+	-- 针对 Price=0 但 CanSell=true 的物品给予保底价
+	if finalSellPrice <= 0 and conf.CanSell then
+		if conf.Rarity == "Legendary" then return 200
+		elseif conf.Rarity == "Epic" then return 100
+		elseif conf.Rarity == "Rare" then return 50
+		else return 10 end
+	end
+
+	return finalSellPrice
+end
+
+-- ==========================================
+-- 2. 初始化 UI
 -- ==========================================
 local function initInterface()
 	-- A. 确保 ScreenGui 存在
@@ -42,12 +62,12 @@ local function initInterface()
 		gui.Parent = playerGui
 	end
 
-	-- B. 创建圆形背包按钮 (如果不存在)
+	-- B. 创建圆形背包按钮
 	local openBtn = gui:FindFirstChild("OpenButton")
 	if not openBtn then
 		openBtn = Instance.new("ImageButton")
 		openBtn.Name = "OpenButton"
-		openBtn.Image = "rbxassetid://120000874590886" -- 背包图标
+		openBtn.Image = "rbxassetid://120000874590886" 
 		openBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		openBtn.BackgroundTransparency = 0.4
 		openBtn.Parent = gui
@@ -59,7 +79,7 @@ local function initInterface()
 		stroke.Parent = openBtn
 	end
 
-	-- 调整按钮位置 (左侧，避开任务栏)
+	-- 调整按钮位置
 	if isSmallScreen() then
 		openBtn.Size = UDim2.new(0, 40, 0, 40) 
 		openBtn.Position = UDim2.new(0, 10, 0.35, 0) 
@@ -70,7 +90,7 @@ local function initInterface()
 		openBtn.AnchorPoint = Vector2.new(0, 0.5)
 	end
 
-	-- C. 重建主窗口 (MainFrame)
+	-- C. 重建主窗口
 	if gui:FindFirstChild("MainFrame") then gui.MainFrame:Destroy() end
 
 	local main = Instance.new("Frame")
@@ -81,17 +101,14 @@ local function initInterface()
 	main.ClipsDescendants = true 
 	main.Parent = gui
 
-	-- [布局] 窗口尺寸与定位
+	-- 窗口适配
 	if isSmallScreen() then
-		-- 📱 移动端：全屏，留出极小边距防止贴边
-		main.Size = UDim2.new(1, -10, 1, -10) -- 左右各留 5px
+		main.Size = UDim2.new(1, -10, 1, -10)
 		main.Position = UDim2.new(0.5, 0, 0.5, 0)
 		main.AnchorPoint = Vector2.new(0.5, 0.5)
 		main.BackgroundTransparency = 0.05
-		-- 移动端也加一点圆角，更精致
 		Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 	else
-		-- 💻 PC端：居中悬浮窗
 		main.Size = UDim2.new(0, 650, 0, 500)
 		main.Position = UDim2.new(0.5, 0, 0.5, 0)
 		main.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -99,11 +116,7 @@ local function initInterface()
 		Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
 	end
 
-	-- ==============================
-	-- 3. 窗口内部布局 (极限压缩)
-	-- ==============================
-
-	-- [关闭按钮] 放在最右上角，独立存在
+	-- 关闭按钮
 	local closeBtn = Instance.new("TextButton")
 	closeBtn.Name = "CloseButton"
 	closeBtn.Text = "X"
@@ -123,14 +136,13 @@ local function initInterface()
 		closeBtn.Position = UDim2.new(1, -15, 0, 15)
 	end
 
-	-- [标签页] 顶部左侧
+	-- 标签页
 	local tabFrame = Instance.new("Frame")
 	tabFrame.Name = "TabFrame"
 	tabFrame.BackgroundTransparency = 1
 	tabFrame.Parent = main
 
 	if isSmallScreen() then
-		-- [优化] 移动端标签栏放在顶部左侧，高度仅 35px
 		tabFrame.Size = UDim2.new(0.7, 0, 0, 35) 
 		tabFrame.Position = UDim2.new(0, 5, 0, 5)
 	else
@@ -152,8 +164,6 @@ local function initInterface()
 		btn.BackgroundColor3 = (currentTab == id) and Color3.fromRGB(80, 80, 90) or Color3.fromRGB(50, 50, 55)
 		btn.Parent = tabFrame
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-		-- [优化] 按钮宽度更窄
 		btn.Size = UDim2.new(0.48, 0, 1, 0) 
 		btn.TextSize = isSmallScreen() and 14 or 18
 
@@ -169,19 +179,18 @@ local function initInterface()
 		end)
 	end
 
-	createTab("Backpack", "WEAPONS") -- 简短名称
+	createTab("Backpack", "WEAPONS") 
 	createTab("Wardrobe", "SKIN")
 
-	-- [底部出售栏] 极限压缩
+	-- 底部出售栏
 	local sellArea = Instance.new("Frame")
 	sellArea.Name = "SellArea"
 	sellArea.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 	sellArea.Parent = main
 
 	if isSmallScreen() then
-		-- [优化] 底部仅占 45px，稍微留一点底边距
 		sellArea.Size = UDim2.new(1, -10, 0, 45)
-		sellArea.Position = UDim2.new(0, 5, 1, -50) -- 留出一点底部空隙
+		sellArea.Position = UDim2.new(0, 5, 1, -50) 
 		Instance.new("UICorner", sellArea).CornerRadius = UDim.new(0, 6)
 	else
 		sellArea.Size = UDim2.new(1, -30, 0, 50)
@@ -212,7 +221,6 @@ local function initInterface()
 		sellBtn.Size = UDim2.new(0.3, 0, 0.8, 0)
 		sellBtn.Position = UDim2.new(0.68, 0, 0.1, 0)
 		sellBtn.TextSize = 16
-
 		infoLabel.Size = UDim2.new(0.65, 0, 1, 0)
 		infoLabel.Position = UDim2.new(0.02, 0, 0, 0)
 		infoLabel.TextSize = 14
@@ -220,13 +228,12 @@ local function initInterface()
 		sellBtn.Size = UDim2.new(0.3, 0, 0.7, 0)
 		sellBtn.Position = UDim2.new(0.65, 0, 0.15, 0)
 		sellBtn.TextSize = 18
-
 		infoLabel.Size = UDim2.new(0.6, 0, 1, 0)
 		infoLabel.Position = UDim2.new(0.05, 0, 0, 0)
 		infoLabel.TextSize = 16
 	end
 
-	-- [中间滚动列表] 占据所有剩余空间
+	-- 物品滚动列表
 	scrollingFrame = Instance.new("ScrollingFrame")
 	scrollingFrame.Name = "Container"
 	scrollingFrame.BackgroundTransparency = 1
@@ -234,10 +241,8 @@ local function initInterface()
 	scrollingFrame.Parent = main
 
 	if isSmallScreen() then
-		-- Top: Tab(35) + Pad(5) = 40 (起始)
-		-- Bottom: SellArea(45) + Pad(5) = 50 (底部留空)
 		scrollingFrame.Position = UDim2.new(0, 5, 0, 45) 
-		scrollingFrame.Size = UDim2.new(1, -10, 1, -100) -- 给底部留足够空间
+		scrollingFrame.Size = UDim2.new(1, -10, 1, -100) 
 	else
 		scrollingFrame.Position = UDim2.new(0, 15, 0, 70)
 		scrollingFrame.Size = UDim2.new(1, -30, 1, -140)
@@ -248,7 +253,6 @@ local function initInterface()
 	grid.Parent = scrollingFrame
 
 	if isSmallScreen() then
-		-- [优化] 70x70 小圆角正方形，更密集的展示
 		grid.CellSize = UDim2.new(0, 70, 0, 70)
 		grid.CellPadding = UDim2.new(0, 6, 0, 6)
 	else
@@ -256,10 +260,7 @@ local function initInterface()
 		grid.CellPadding = UDim2.new(0, 12, 0, 12)
 	end
 
-	-- ==============================
-	-- 4. 事件绑定
-	-- ==============================
-
+	-- 事件绑定
 	local function toggleUI()
 		main.Visible = not main.Visible
 		if main.Visible then
@@ -272,7 +273,7 @@ local function initInterface()
 
 	sellBtn.MouseButton1Click:Connect(function()
 		if selectedItemName then
-			sellEvent:FireServer(selectedItemName, math.floor(selectedItemPrice * 0.5), 1)
+			sellEvent:FireServer(selectedItemName, selectedItemPrice, 1)
 			selectedItemName = nil
 			task.wait(0.2)
 			refreshInventory()
@@ -281,10 +282,9 @@ local function initInterface()
 end
 
 -- ==========================================
--- 5. 刷新库存数据 (含出售逻辑)
+-- 5. 刷新库存数据 (逻辑修复)
 -- ==========================================
 function refreshInventory()
-	-- [修复] 增加判空逻辑，防止报错
 	if not scrollingFrame or not scrollingFrame.Parent then return end
 
 	local main = scrollingFrame.Parent
@@ -292,9 +292,40 @@ function refreshInventory()
 	local sellBtn = sellArea and sellArea:FindFirstChild("SellButton")
 	local infoLabel = sellArea and sellArea:FindFirstChild("InfoLabel")
 
+	-- 1. 重置界面状态
 	if sellBtn then sellBtn.Visible = false end
 	if infoLabel then infoLabel.Text = selectedItemName and ("Select: " .. selectedItemName) or "Select item" end
 
+	-- 2. [关键] 在刷新时，如果已选中物品，检查是否显示出售按钮
+	if selectedItemName and sellBtn then
+		local conf = GameConfig.Weapons[selectedItemName] or GameConfig.Items[selectedItemName] or GameConfig.Skin[selectedItemName]
+
+		if conf then
+			local category = conf.Category
+			local canSell = false
+
+			-- 规则：只卖 Weapon, Items, Misc
+			if category == "Weapons" or category == "Items" or category == "Misc" then
+				canSell = true
+			end
+			-- 规则：初始武器 Bat 不可卖
+			if selectedItemName == "Bat" then canSell = false end
+			-- 规则：配置明确禁止
+			if conf.CanSell == false then canSell = false end
+
+			-- 计算价格
+			local finalSellPrice = calculateSellPrice(selectedItemName, conf)
+			selectedItemPrice = finalSellPrice -- 更新全局价格
+
+			-- 显示按钮条件：可卖 且 价格>0
+			if canSell and finalSellPrice > 0 then
+				sellBtn.Visible = true
+				sellBtn.Text = "SELL ($".. finalSellPrice ..")"
+			end
+		end
+	end
+
+	-- 3. 清理旧列表
 	for _, child in pairs(scrollingFrame:GetChildren()) do
 		if child:IsA("GuiButton") then child:Destroy() end
 	end
@@ -305,6 +336,7 @@ function refreshInventory()
 	scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 
+	-- 4. 生成新列表
 	for _, itemVal in ipairs(invFolder:GetChildren()) do
 		local itemName = itemVal.Name
 		local qty = itemVal.Value
@@ -325,7 +357,6 @@ function refreshInventory()
 				card.Name = itemName
 				card.BackgroundColor3 = (selectedItemName == itemName) and Color3.fromRGB(70, 70, 80) or Color3.fromRGB(45, 45, 50)
 				card.Parent = scrollingFrame
-				-- [优化] 物品块圆角 (与按钮一致的小圆角)
 				Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
 
 				if selectedItemName == itemName then
@@ -353,35 +384,9 @@ function refreshInventory()
 				qtyLabel.TextSize = isSmallScreen() and 14 or 18
 				qtyLabel.Parent = card
 
+				-- 点击逻辑：只更新状态，然后刷新界面
 				card.MouseButton1Click:Connect(function()
 					selectedItemName = itemName
-					selectedItemPrice = conf.Price or 0
-					if infoLabel then infoLabel.Text = conf.DisplayName or itemName end
-
-					-- [新增] 出售判断逻辑
-					if sellBtn then
-						local canSell = false
-						-- 只允许出售 Weapon 或 Items(通常包含雕像)
-						if category == "Weapons" or category == "Items" then
-							canSell = true
-						end
-
-						-- 特殊：禁止出售 Bat (初始武器)
-						if itemName == "Bat" then
-							canSell = false
-						end
-
-						local sellPrice = math.floor((conf.Price or 0) * 0.5)
-
-						if canSell and sellPrice > 0 then
-							sellBtn.Visible = true
-							-- 显示出售价格
-							sellBtn.Text = "SELL ($".. sellPrice ..")"
-						else
-							sellBtn.Visible = false
-						end
-					end
-
 					refreshInventory()
 				end)
 			end
@@ -413,4 +418,4 @@ workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(functio
 end)
 
 refreshInventory()
-print("✅ ItemsInventoryHandler 极简布局 + 出售功能版")
+print("✅ ItemsInventoryHandler：Sell按钮显示逻辑修复完毕")
