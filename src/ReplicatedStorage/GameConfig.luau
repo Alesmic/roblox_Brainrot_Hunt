@@ -47,7 +47,7 @@ GameConfig.Mobs = {
 		Name = "Samurai", 
 		MaxHealth = 50,    -- 50 HP
 		Damage = 10,       -- 10 Damage
-		Exp = 50,          -- 50 EXP
+		Exp = 200,          -- 50 EXP
 		AttackRange = 5,
 		AttackSpeed = 1.5,
 		WalkSpeed = 12,
@@ -72,33 +72,19 @@ GameConfig.Mobs = {
 	},
 	["Black Garden Ant"] = {
 		Name = "Black Garden Ant",
-		MaxHealth = 300,   
+		MaxHealth = 150,   
 		Damage = 20,       
 		Exp = 300,         
-		UnlockLevel = 20,  -- Unlocks Boss Fight at Level 20
+		UnlockLevel = 20, 
 		AttackRange = 8,
 		AttackSpeed = 1.2,
 		WalkSpeed = 16,
-		Drops = {
-			{ ItemName = "ClassicSword", Chance = 0.5 }, -- 50% drop chance for Weapon
-			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
-		}
-	},
-
-	-- 🌲 Forest Area
-	["Teddy"] = { 
-		Name = "Teddy", -- Ensure model name is Forest NPC
-		MaxHealth = 100,   -- 100 HP
-		Damage = 20,       -- 20 Damage
-		Exp = 100,         -- 100 EXP
-		AttackRange = 6,
-		AttackSpeed = 1.2,
-		WalkSpeed = 10,
 		Drops = {
 			{ ItemName = "Medpack", Chance = 0.3 }
 		}
 	},
 
+	-- 🌲 Forest Area
 	-- Forest Boss (Unlocked at Lvl 50)
 	["Forest Guardian"] = { 
 		Name = "Forest Guardian", 
@@ -119,7 +105,7 @@ GameConfig.Mobs = {
 		Name = "Desert Raider", -- Ensure model name is Desert Raider
 		MaxHealth = 200,   -- 200 HP
 		Damage = 30,       -- 30 Damage
-		Exp = 200,         -- 200 EXP
+		Exp = 1000,         -- 200 EXP
 		AttackRange = 8,
 		AttackSpeed = 1.0,
 		WalkSpeed = 14,
@@ -128,8 +114,8 @@ GameConfig.Mobs = {
 		}
 	},
 	-- Desert Boss (Unlocked at Lvl 99)
-	["DesertBoss"] = { 
-		Name = "DesertBoss", 
+	["DesertKing"] = { 
+		Name = "DesertKing", 
 		MaxHealth = 1000,  
 		Damage = 90,
 		Exp = 5000,
@@ -228,8 +214,8 @@ GameConfig.Mobs = {
 		}
 	},
 	-- Desert Boss (Unlocked at Lvl 99)
-	["DesertBoss"] = { 
-		Name = "DesertBoss", 
+	["DesertKing"] = { 
+		Name = "DesertKing", 
 		MaxHealth = 1000,  
 		Damage = 90,
 		Exp = 5000,
@@ -277,7 +263,7 @@ GameConfig.Quests = {
 	},
 
 	-- Quest: Defeat Desert Boss
-	["KillDesertBoss"] = {
+	["KillDesertKing"] = {
 		Name = "Defeat Desert Boss", 
 		TargetMob = "Saharan Master", 
 		TargetCount = 1,

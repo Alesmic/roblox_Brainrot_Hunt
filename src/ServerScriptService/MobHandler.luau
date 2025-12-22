@@ -19,7 +19,7 @@ local BOSS_KEYWORDS = {"Boss", "Guardian", "Master"}
 -- [新增] Boss 白名单 (名字里没关键词，但你想算作 Boss 的可以加在这里)
 local BOSS_WHITELIST = {
 	["WolfBoss"] = true, -- 示例
-	["DesertBoss"] = true,
+	["DesertKing"] = true,
 }
 
 -- 存储怪物模板

@@ -9,7 +9,7 @@ local MobHandler = require(ServerScriptService:WaitForChild("MobHandler"))
 -- ==========================================
 -- [Configuration] Original Boss name
 -- ==========================================
-local BOSS_NAME = "DesertBoss" -- <--- Ensure this is your original Boss name
+local BOSS_NAME = "DesertKing" -- <--- Ensure this is your original Boss name
 local MIN_LEVEL = 99
 -- ==========================================
 

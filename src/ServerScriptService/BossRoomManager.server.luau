@@ -28,7 +28,7 @@ local playersInBossFight = {}
 local BOSS_LOCATIONS = {
 	["Saharan Master"] = "Boss Area", -- Corresponding to Workspace["Boss Area"]
 	["WolfBoss"] = "Forest Boss Area", -- <--- [Added] Your new Boss room folder name
-	["DesertBoss"] = "Desert Boss Area",
+	["DesertKing"] = "Desert Boss Area",
 	-- Add more Bosses here...
 }
 
