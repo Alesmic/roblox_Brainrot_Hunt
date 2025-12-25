@@ -7,12 +7,13 @@ local ServerStorage = game:GetService("ServerStorage")
 local GameConfig = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
 -- [⚠️IMPORTANT] 修改版本号以重置数据 (测试用)
-local PlayerDataStore = DataStoreService:GetDataStore("RPG_Data_v6_FixReward")
+-- 我们使用一个新的 Key 来确保数据结构干净，避免旧数据干扰
+local PlayerDataStore = DataStoreService:GetDataStore("RPG_Data_Final_Fix_v1")
 
 local JAPANESE_HOUSE_SPAWN = Vector3.new(-783.183, 36.304, 220.17)
 
 -- ==========================================
--- 1. 自动确保 RemoteEvent 存在 (核心修复)
+-- 1. 自动确保 RemoteEvent 存在
 -- ==========================================
 local function ensureFolder(name)
 	local folder = ReplicatedStorage:FindFirstChild(name)
@@ -38,7 +39,7 @@ local function ensureEvent(name)
 end
 
 local startTutorialEvent = ensureEvent("StartTutorial")
-local finishTalkEvent = ensureEvent("FinishTutorialTalk") -- 修复点：确保它存在！
+local finishTalkEvent = ensureEvent("FinishTutorialTalk")
 local UpdatePvPUIEvent = ensureEvent("UpdatePvPUI")
 
 -- ==========================================
@@ -174,8 +175,8 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 
 	if success and data then
-		level.Value = data.Level
-		gold.Value = data.Gold
+		level.Value = data.Level or 1
+		gold.Value = data.Gold or 0
 		experience.Value = data.Experience or 0
 
 		if data.TutorialCompleted then
@@ -183,7 +184,18 @@ Players.PlayerAdded:Connect(function(player)
 			print("📘 [Data] 玩家已完成教程")
 		end
 
-		-- 再次检查血量 (防止竞态)
+		-- [新增] 恢复任务进度
+		if data.Quests then
+			for questName, val in pairs(data.Quests) do
+				local qVal = Instance.new("IntValue")
+				qVal.Name = questName
+				qVal.Value = val
+				qVal.Parent = hiddenStats
+				print("    📜 恢复任务: " .. questName .. " = " .. val)
+			end
+		end
+
+		-- 再次检查血量
 		local character = player.Character
 		if character then
 			local hum = character:FindFirstChild("Humanoid")
@@ -191,25 +203,27 @@ Players.PlayerAdded:Connect(function(player)
 		end
 
 		-- 加载背包
-		for itemName, qty in pairs(data.Inventory) do
-			local itemConfig = GameConfig.Weapons[itemName] or GameConfig.Items[itemName] or GameConfig.Skin[itemName]
-			local finalQty = qty
-			if itemConfig and itemConfig.Category == "Weapons" then finalQty = 1 end
+		if data.Inventory then
+			for itemName, qty in pairs(data.Inventory) do
+				local itemConfig = GameConfig.Weapons[itemName] or GameConfig.Items[itemName] or GameConfig.Skin[itemName]
+				local finalQty = qty
+				if itemConfig and itemConfig.Category == "Weapons" then finalQty = 1 end
 
-			local itemValue = Instance.new("IntValue")
-			itemValue.Name = itemName
-			itemValue.Value = finalQty
-			itemValue.Parent = inventory
+				local itemValue = Instance.new("IntValue")
+				itemValue.Name = itemName
+				itemValue.Value = finalQty
+				itemValue.Parent = inventory
 
-			-- 发放物品实体
-			if itemConfig and (itemConfig.Category == "Weapons" or itemConfig.Category == "Tools") then
-				local toolModel = ServerStorage:FindFirstChild("Tools") and ServerStorage.Tools:FindFirstChild(itemName)
-				if toolModel then
-					if not player.Backpack:FindFirstChild(itemName) then
-						toolModel:Clone().Parent = player.Backpack
-					end
-					if not player.StarterGear:FindFirstChild(itemName) then
-						toolModel:Clone().Parent = player.StarterGear
+				-- 发放物品实体
+				if itemConfig and (itemConfig.Category == "Weapons" or itemConfig.Category == "Tools") then
+					local toolModel = ServerStorage:FindFirstChild("Tools") and ServerStorage.Tools:FindFirstChild(itemName)
+					if toolModel then
+						if not player.Backpack:FindFirstChild(itemName) then
+							toolModel:Clone().Parent = player.Backpack
+						end
+						if not player.StarterGear:FindFirstChild(itemName) then
+							toolModel:Clone().Parent = player.StarterGear
+						end
 					end
 				end
 			end
@@ -218,6 +232,9 @@ Players.PlayerAdded:Connect(function(player)
 		-- 新玩家默认值
 		level.Value = GameConfig.DefaultPlayer.Level
 		gold.Value = GameConfig.DefaultPlayer.Gold
+
+		-- [保险措施] 如果是新玩家，且没有任务，默认给一个0进度的新手任务(可选)
+		-- 但由于有教程系统，这里可以不给，等教程触发
 	end
 end)
 
@@ -233,11 +250,21 @@ Players.PlayerRemoving:Connect(function(player)
 			Gold = leaderstats.Gold.Value,
 			Experience = leaderstats.Experience.Value,
 			Inventory = {},
-			TutorialCompleted = false
+			TutorialCompleted = false,
+			Quests = {} -- [新增] 任务表
 		}
 
-		if hiddenStats and hiddenStats:FindFirstChild("TutorialCompleted") then
-			dataToSave.TutorialCompleted = hiddenStats.TutorialCompleted.Value
+		if hiddenStats then
+			if hiddenStats:FindFirstChild("TutorialCompleted") then
+				dataToSave.TutorialCompleted = hiddenStats.TutorialCompleted.Value
+			end
+
+			-- [新增] 保存所有 Quest_ 开头的任务
+			for _, child in pairs(hiddenStats:GetChildren()) do
+				if string.sub(child.Name, 1, 6) == "Quest_" then
+					dataToSave.Quests[child.Name] = child.Value
+				end
+			end
 		end
 
 		for _, itemValue in pairs(inventory:GetChildren()) do
@@ -252,7 +279,7 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 -- ==========================================
--- 5. 处理新手任务完成 (核心修复)
+-- 5. 处理新手任务完成
 -- ==========================================
 finishTalkEvent.OnServerEvent:Connect(function(player)
 	print("🎁 [Server] 收到新手完成请求: " .. player.Name)
@@ -264,21 +291,14 @@ finishTalkEvent.OnServerEvent:Connect(function(player)
 	if toolsFolder then
 		local weapon = toolsFolder:FindFirstChild(weaponName)
 		if weapon then
-			-- 检查是否已有
 			local hasWeapon = player.Backpack:FindFirstChild(weaponName) or player.StarterGear:FindFirstChild(weaponName)
 
 			if not hasWeapon then
-				-- 给背包
-				local w1 = weapon:Clone()
-				w1.Parent = player.Backpack
-
-				-- 给存档 (StarterGear)
-				local w2 = weapon:Clone()
-				w2.Parent = player.StarterGear
+				weapon:Clone().Parent = player.Backpack
+				weapon:Clone().Parent = player.StarterGear
 
 				print("    ⚔️ 武器 [Bat] 已发放给 " .. player.Name)
 
-				-- 更新 Inventory 数据 (否则下线就没了)
 				local inventory = player:FindFirstChild("Inventory")
 				if inventory then
 					local itemVal = inventory:FindFirstChild(weaponName)
@@ -289,26 +309,18 @@ finishTalkEvent.OnServerEvent:Connect(function(player)
 						itemVal.Parent = inventory
 					end
 				end
-			else
-				warn("    ⚠️ 玩家已有武器，跳过发放")
 			end
-		else
-			warn("    ❌ 严重错误: 在 ServerStorage/Tools 里找不到 " .. weaponName)
 		end
-	else
-		warn("    ❌ 严重错误: ServerStorage 下没有 Tools 文件夹!")
 	end
 
 	-- 2. 发放任务 & 标记完成
 	local hiddenStats = player:FindFirstChild("HiddenStats")
 	if hiddenStats then
-		-- 标记教程已完成
 		if hiddenStats:FindFirstChild("TutorialCompleted") then
 			hiddenStats.TutorialCompleted.Value = true
 			print("    ✅ 教程状态标记为: 完成")
 		end
 
-		-- 发放杀怪任务
 		local questName = "Quest_SamuraiSlayer"
 		if not hiddenStats:FindFirstChild(questName) then
 			local qVal = Instance.new("IntValue")

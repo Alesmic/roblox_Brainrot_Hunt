@@ -52,7 +52,7 @@ GameConfig.Mobs = {
 		AttackSpeed = 1.5,
 		WalkSpeed = 12,
 		Drops = {
-			{ ItemName = "Medpack", Chance = 0.15 } -- 15% drop chance for Medpack
+			{ ItemName = "Medpack", Chance = 0.05 } -- 15% drop chance for Medpack
 		}
 	},
 	-- Urban Boss (Unlocked at Lvl 20)
@@ -66,12 +66,12 @@ GameConfig.Mobs = {
 		AttackSpeed = 1.2,
 		WalkSpeed = 16,
 		Drops = {
-			{ ItemName = "ClassicSword", Chance = 0.5 }, -- 50% drop chance for Weapon
+			{ ItemName = "ClassicSword", Chance = 0.1 }, -- 50% drop chance for Weapon
 			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
 		}
 	},
-	["Black Garden Ant"] = {
-		Name = "Black Garden Ant",
+	["Ant(Forest Spirit)"] = {
+		Name = "Ant(Forest Spirit)",
 		MaxHealth = 150,   
 		Damage = 20,       
 		Exp = 300,         
@@ -80,7 +80,7 @@ GameConfig.Mobs = {
 		AttackSpeed = 1.2,
 		WalkSpeed = 16,
 		Drops = {
-			{ ItemName = "Medpack", Chance = 0.3 }
+			{ ItemName = "Medpack", Chance = 0.1 }
 		}
 	},
 
@@ -156,8 +156,8 @@ GameConfig.Mobs = {
 			{ ItemName = "Red Aura", Chance = 0.1 }      -- 10% drop chance for Aura
 		}
 	},
-	["Black Garden Ant"] = {
-		Name = "Black Garden Ant",
+	["Ant(Forest Spirit)"] = {
+		Name = "Ant(Forest Spirit)",
 		MaxHealth = 300,   
 		Damage = 20,       
 		Exp = 300,         
@@ -172,19 +172,6 @@ GameConfig.Mobs = {
 	},
 
 	-- 🌲 Forest Area
-	["Teddy"] = { 
-		Name = "Teddy", -- Ensure model name is Forest NPC
-		MaxHealth = 100,   -- 100 HP
-		Damage = 20,       -- 20 Damage
-		Exp = 100,         -- 100 EXP
-		AttackRange = 6,
-		AttackSpeed = 1.2,
-		WalkSpeed = 10,
-		Drops = {
-			{ ItemName = "Medpack", Chance = 0.3 }
-		}
-	},
-
 	-- Forest Boss (Unlocked at Lvl 50)
 	["WolfBoss"] = { 
 		Name = "AntBoss", 
